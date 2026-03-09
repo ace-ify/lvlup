@@ -1,4 +1,4 @@
-/webd/
+﻿/webd/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -222,3 +222,17 @@ moltbook_setup/credentials.json
 
 # TypeScript build output (webd/)
 webd/dist/
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Large Assets
+misc/*.pdf
+*.zip

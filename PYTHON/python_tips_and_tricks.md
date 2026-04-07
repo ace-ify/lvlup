@@ -4,17 +4,262 @@
 ---
 
 ## 1. String Formatting & Basics
-### f-Strings (The Modern Way)
-Instead of `.format()`, use **f-strings** (Python 3.6+). They are faster and much easier to read.
-```python
-name = "Antigravity"
-# Fast and readable
-print(f"Hello, {name}!")
+### Core Concept: Format Specifier Anatomy
+Most formatting power comes from this structure:
 
-# Number formatting (2 decimal places)
-price = 19.998
-print(f"Price: ${price:.2f}") # Output: $20.00
+```text
+{value:[fill][align][width][.precision][type]}
 ```
+
+- `fill`: character used to fill empty width (example: `0`, `*`, `.`)
+- `align`: `<` left, `>` right, `^` center
+- `width`: minimum total characters to reserve
+- `.precision`: depends on type (decimal places for floats, significant digits for `g`, max chars for strings)
+- `type`: how value should be represented (`f`, `d`, `x`, etc.)
+
+```python
+name = "Ada"
+score = 92.4567
+
+print(f"|{name:>10}|")      # right align in width 10
+print(f"|{score:08.2f}|")   # zero-fill, width 8, precision 2, float
+```
+
+### Width vs Precision (critical difference)
+- `width` controls total field size (spacing/padding)
+- `precision` controls numeric detail (or string truncation behavior)
+
+```python
+x = 3.14159
+print(f"|{x:10.2f}|")  # width 10, precision 2 -> "|      3.14|"
+print(f"|{x:.2f}|")    # no width, precision 2 -> "|3.14|"
+```
+
+### Type Specifiers
+#### Floats: `f`, `e`, `g`
+```python
+x = 1234.56789
+print(f"{x:f}")     # fixed point -> 1234.567890
+print(f"{x:.2f}")   # fixed point 2 decimals -> 1234.57
+print(f"{x:e}")     # scientific notation -> 1.234568e+03
+print(f"{x:.3e}")   # scientific, 3 decimals -> 1.235e+03
+print(f"{x:g}")     # general format (auto f/e)
+print(f"{x:.5g}")   # general, 5 significant digits
+```
+
+#### Integers: `d`, `b`, `o`, `x`
+```python
+n = 42
+print(f"{n:d}")  # decimal -> 42
+print(f"{n:b}")  # binary  -> 101010
+print(f"{n:o}")  # octal   -> 52
+print(f"{n:x}")  # hex     -> 2a
+print(f"{n:X}")  # HEX     -> 2A
+```
+
+### Precision in Depth
+#### `.nf` behavior and rounding
+```python
+v = 19.998
+print(f"{v:.2f}")  # 20.00
+print(f"{v:.1f}")  # 20.0
+```
+
+Precision with float formatting rounds display output.
+
+```python
+print(f"{2.675:.2f}")  # may show 2.67 due to binary floating-point representation
+```
+
+#### Why precision does not work with integer `d`
+```python
+n = 7
+# print(f"{n:.3d}")
+# ValueError: Precision not allowed in integer format specifier
+```
+
+Use width + zero padding instead:
+
+```python
+print(f"{n:03d}")  # 007
+```
+
+### Width and Padding
+#### Width usage
+```python
+n = 42
+print(f"|{n:5d}|")   # "|   42|"
+print(f"|{n:<5d}|")  # "|42   |"
+```
+
+#### Zero padding
+```python
+n = 7
+print(f"{n:03d}")   # 007
+print(f"{n:08d}")   # 00000007
+```
+
+#### Spacing vs zero padding
+```python
+n = 7
+print(f"|{n:5d}|")   # spaces: |    7|
+print(f"|{n:05d}|")  # zeros:  |00007|
+```
+
+### Alignment and Fill
+#### Align operators `<`, `>`, `^`
+```python
+text = "Hi"
+print(f"|{text:<8}|")  # left
+print(f"|{text:>8}|")  # right
+print(f"|{text:^8}|")  # center
+```
+
+#### Custom fill characters
+```python
+print(f"|{'A':*^7}|")  # |***A***|
+print(f"|{'A':.>7}|")  # |......A|
+print(f"|{'A':-_<7}|") # |A_-_-_-| (fill is '-' here, visible pattern depends on char)
+```
+
+### Sign Handling
+```python
+pos = 12
+neg = -12
+
+print(f"{pos:d}, {neg:d}")    # default: 12, -12
+print(f"{pos:+d}, {neg:+d}")  # always show sign: +12, -12
+print(f"{pos: d}, {neg: d}")  # leading space for positives: ' 12', '-12'
+```
+
+### Special Formatting
+#### Thousand separators
+```python
+num = 1234567890
+print(f"{num:,}")  # 1,234,567,890
+print(f"{num:_}")  # 1_234_567_890
+```
+
+#### Percentage formatting
+```python
+ratio = 0.8732
+print(f"{ratio:%}")    # 87.320000%
+print(f"{ratio:.2%}")  # 87.32%
+```
+
+### Combinations (multiple specifiers together)
+```python
+price = 1234.5
+print(f"{price:*>12,.2f}")  # ***1,234.50
+print(f"{price:+012.2f}")   # +00001234.50
+```
+
+#### Real-world: aligned table output
+```python
+items = [
+    ("Keyboard", 3, 2499.0),
+    ("Mouse", 12, 799.5),
+    ("Monitor", 2, 15499.99),
+]
+
+print(f"{'Item':<12} {'Qty':>5} {'Price':>12}")
+print("-" * 31)
+for name, qty, price in items:
+    print(f"{name:<12} {qty:>5d} {price:>12,.2f}")
+```
+
+### Comparison of Methods
+#### 1) f-strings (recommended)
+```python
+name = "Ava"
+score = 91.234
+print(f"{name} scored {score:.1f}")
+```
+
+#### 2) `format()`
+```python
+name = "Ava"
+score = 91.234
+print("{} scored {:.1f}".format(name, score))
+```
+
+#### 3) `%` formatting (legacy)
+```python
+name = "Ava"
+score = 91.234
+print("%s scored %.1f" % (name, score))
+```
+
+Use f-strings for modern code, `format()` for reusable templates, `%` only when maintaining old code.
+
+### Common Mistakes
+#### Mistake 1: `.3d`
+```python
+n = 7
+# f"{n:.3d}"  # ValueError: precision not allowed for integer d
+```
+
+Correct:
+```python
+f"{n:03d}"  # 007
+```
+
+#### Mistake 2: Confusing width with precision
+```python
+x = 3.14159
+print(f"{x:8f}")   # width 8, default precision 6
+print(f"{x:.2f}")  # precision 2, no minimum width
+```
+
+#### Mistake 3: Misusing float formatting on integers
+```python
+n = 10
+print(f"{n:.2f}")  # Works (10.00) but semantically this is float-style display
+print(f"{n:d}")     # Integer-style display
+```
+
+### Advanced Notes
+#### When to use `Decimal`
+Use `Decimal` for money and exact base-10 arithmetic.
+
+```python
+from decimal import Decimal
+
+price = Decimal("0.10") + Decimal("0.20")
+print(price)           # 0.30 (exact)
+print(f"{price:.2f}") # 0.30
+```
+
+#### When to use `round()`
+Use `round()` when you need numeric rounding before further calculations, not only display formatting.
+
+```python
+x = 3.14159
+y = round(x, 2)  # numeric value 3.14
+print(y)
+print(f"{x:.2f}")  # display formatting only
+```
+
+#### Edge cases and unexpected behavior
+```python
+print(round(2.5))      # 2 (banker's rounding: ties to even)
+print(round(3.5))      # 4
+print(f"{2.675:.2f}") # 2.67 (binary float representation effect)
+```
+
+### Summary Cheat Sheet
+| Goal | Specifier | Example | Output |
+| :--- | :--- | :--- | :--- |
+| 2 decimal float | `.2f` | `f"{19.998:.2f}"` | `20.00` |
+| Scientific notation | `.3e` | `f"{1234.5:.3e}"` | `1.234e+03` |
+| General significant digits | `.5g` | `f"{1234.5:.5g}"` | `1234.5` |
+| Integer width 5 | `5d` | `f"{42:5d}"` | `   42` |
+| Zero padded integer | `03d` | `f"{7:03d}"` | `007` |
+| Left / right / center | `<`, `>`, `^` | `f"{txt:^10}"` | centered text |
+| Always show sign | `+` | `f"{12:+d}"` | `+12` |
+| Space for positive sign | ` ` | `f"{12: d}"` | ` 12` |
+| Thousand separators | `,` or `_` | `f"{1000000:,}"` | `1,000,000` |
+| Percentage | `.2%` | `f"{0.8732:.2%}"` | `87.32%` |
 
 ---
 
@@ -532,4 +777,3 @@ my_func()  # Output: Hello! (closure remembers msg)
 ---
 
 *Happy Coding! 🐍*
-

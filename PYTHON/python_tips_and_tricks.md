@@ -585,26 +585,55 @@ Getters and setters aren't just for "access"—they are for **Access Control**.
 #### The "Modern" Pythonic Way: `@property`
 In real Python projects, we don't usually write `get_age()`. Instead, we use the `@property` decorator to make methods *look* like normal attributes while keeping the logic behind them.
 
+> [!TIP]
+> **The 3-Stage Evolution:**
+> 1. **Normal Way:** `u.age = -5` (No control, anyone can put garbage data).
+> 2. **Explicit Methods:** `u.set_age(-5)` (Control exists, but needs brackets and looks "un-pythonic").
+> 3. **@property Way:** `u.age = -5` (Looks like step 1, but runs the logic of step 2 automatically!)
+
+#### How it works (The Backend "Magic")
+When you use these decorators, Python splits the "Reading" and "Writing" logic:
+
+1.  **`@property` (The Getter):** 
+    *   Creates a "Property Object" with the name of the function (e.g., `age`).
+    *   Triggered when you **Read** the value: `print(u.age)`.
+2.  **`@age.setter` (The Setter):** 
+    *   Registers a function to that existing property object's setter slot.
+    *   Triggered when you **Write** a value: `u.age = 25`.
+    *   **Note:** You *must* define the `@property` first, otherwise `@age.setter` won't know which object to attach to!
+
 ```python
 class Person:
     def __init__(self, age):
-        self.__age = age
+        self._age = age  # Internal variable (underscore convention)
 
     @property
     def age(self):  # This is the "Getter"
-        return self.__age
+        print("Reading age...")
+        return self._age
 
     @age.setter
     def age(self, value):  # This is the "Setter"
+        print(f"Setting age to {value}...")
         if value > 0:
-            self.__age = value
+            self._age = value
         else:
-            print("Age must be positive!")
+            print("Error: Age must be positive!")
 
 p = Person(25)
-print(p.age)   # No brackets needed! (Calls the getter)
-p.age = -5     # Looks like simple assignment (Calls the setter)
+
+# 1. Reading (Calls @property)
+print(p.age)   # Output: Reading age... / 25 (No brackets needed!)
+
+# 2. Writing (Calls @age.setter)
+p.age = 30     # Output: Setting age to 30... (Looks like simple assignment)
+p.age = -5     # Output: Setting age to -5... / Error: Age must be positive!
 ```
+
+> [!IMPORTANT]
+> **Why not `@kuchbhi`?** 
+> The setter decorator *must* match the name of the property. If your function is `@property def price(...)`, your setter *must* be `@price.setter`. This is how Python connects the two functions to the same attribute name.
+
 
 ### Magic Methods (Dunder Methods)
 Special methods with double underscores that customize object behavior.

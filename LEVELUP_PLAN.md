@@ -2,11 +2,21 @@
 
 Goal: finish foundations in parallel, then project phase.
 
+## Source Courses (fixed)
+- ML/DL track source: `Complete Machine Learning, NLP, MLOps & Deployment` (Udemy)
+- Agentic track source: `Complete Agentic AI Bootcamp with LangGraph and LangChain` (Udemy)
+- Rule: these 2 are primary learning sources; no extra random course hopping.
+
 ## Tracks
-- Track A: Agentic AI course completion
-- Track B: ML core completion (filtered, practical)
+- Track A: Agentic AI course completion (from your LangGraph/LangChain Udemy)
+- Track B: ML core completion (filtered from your ML+NLP+MLOps Udemy)
 - Track C: Backend polishing (FastAPI production basics)
 - Track D: DSA daily consistency
+
+## ML Course Filter (what to do vs defer)
+- Do now: preprocessing, EDA basics, regression, classification, metrics, feature engineering, pipelines, model persistence, basic NLP
+- Do light now: deployment basics that support your backend integration
+- Defer for later: deep DS theory blocks not needed for AI engineer projects, very deep DL internals, full MLOps depth
 
 ## Time Split (daily)
 - Agentic AI: 60 min
@@ -16,8 +26,8 @@ Goal: finish foundations in parallel, then project phase.
 - Log: 10 min
 
 ## Completion Criteria (clear end conditions)
-- Agentic AI done when: LangGraph advanced sections complete + 2 runnable mini builds + README notes
-- ML done when: preprocessing + regression + classification + metrics + basic NLP complete in 3 notebooks with comparison
+- Agentic AI done when: all core + advanced LangGraph/LangChain sections complete + 2 runnable mini builds + README notes
+- ML done when: filtered ML path complete from the course + 3 notebooks (regression, classification, NLP) with metric comparison
 - Backend done when: auth + CRUD + DB migrations + caching + tests + Docker + deployed URL
 - DSA done when: 120 total actions = 80 quality solves + 40 revisions
 
@@ -29,22 +39,22 @@ Goal: finish foundations in parallel, then project phase.
 ## 8-Week Roadmap
 
 ### Weeks 1-2 (Foundation Close)
-- Agentic AI: finish pending LangGraph advanced modules
-- ML: preprocessing, train/val/test, regression, classification, metrics
+- Agentic AI: finish pending core sections and start advanced LangGraph modules
+- ML: course sections on preprocessing, train/val/test, regression, classification, metrics
 - Backend: FastAPI structure, SQLAlchemy, auth basics (JWT)
 - DSA: 4 questions/day, 5 days/week target
 - Mini ship: one small FastAPI + single AI endpoint demo
 
 ### Weeks 3-4 (Skill Consolidation)
-- Agentic AI: 1 mini agent (tool + memory + basic graph)
-- ML: feature engineering, pipelines, model persistence, intro NLP embeddings
+- Agentic AI: 1 mini agent from course concepts (tool + memory + graph)
+- ML: course sections on feature engineering, pipelines, model persistence, intro NLP
 - Backend: CRUD + Alembic + Redis cache + error handling
 - DSA: continue daily, start timed medium sets
 - Mini ship: one agent workflow with logs and retry handling
 
 ### Weeks 5-6 (Readiness Check)
 - Agentic AI: 1 more mini build with multi-step workflow
-- ML: end-to-end notebook (data -> model -> eval)
+- ML: end-to-end notebook (data -> model -> eval) using filtered course modules
 - Backend: tests (10+), Dockerize, API docs cleanup
 - DSA: revise wrong questions list
 - Mini ship: backend API with tests + Docker run proof

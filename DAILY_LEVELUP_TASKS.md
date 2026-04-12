@@ -2,6 +2,11 @@
 
 Use this as your start/end sheet every day.
 
+## Course Context (fixed)
+- ML tasks come from your Udemy ML/NLP/MLOps course (filtered path only).
+- Agentic tasks come from your Udemy Agentic AI (LangGraph/LangChain) course.
+- For daily check-ins, include course section name completed.
+
 ## How We Will Use This Daily
 - Start message to me: `W{week} D{day} start`
 - End message to me: `W{week} D{day} done` + what is unchecked
@@ -371,6 +376,8 @@ Use this as your start/end sheet every day.
 ```
 Date:
 Week/Day:
+- ML section done:
+- Agentic section done:
 - Done:
 - Not done:
 - Blocker:

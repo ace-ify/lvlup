@@ -1,4 +1,4 @@
-﻿/webd/
+/webd/
 
 # Obsidian vault
 /VaultHQ/
@@ -243,3 +243,24 @@ env/
 # Large Assets
 misc/*.pdf
 *.zip
+
+# --- Obsidian Vault Directories & System Files ---
+/00-Home/
+/01-Daily/
+/02-Source-Material/
+/03-Notes/
+/04-MOCs/
+/05-Tags/
+/06-Projects/
+/07-Drills/
+/08-People/
+/09-Resources/
+/10-Templates/
+/11-Rough-Notes/
+/12-Attachments/
+/.obsidian/
+/claude.md
+/tags.md
+/wiki-links.md
+/organization.md
+/obsidian_blueprint_v2.md

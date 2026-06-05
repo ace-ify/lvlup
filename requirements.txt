@@ -1,6 +1,8 @@
 langchain
 langchain-core
 langchain-community
+langchain-google-genai
+langchain-text-splitters
 pypdf
 pymupdf
 sentence-transformers
@@ -9,10 +11,8 @@ chromadb
 langchain-groq
 python-dotenv
 typesense
-langchain_openai
 langgraph
 tavily
 deepagents
 langsmith
-langchain
 pydantic

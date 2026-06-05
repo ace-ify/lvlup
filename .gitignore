@@ -264,3 +264,10 @@ misc/*.pdf
 /wiki-links.md
 /organization.md
 /obsidian_blueprint_v2.md
+
+# Agent State, Run Logs, and NotebookLM Credentials
+todo.json
+progress.log
+.notebooklm/
+storage_state.json
+

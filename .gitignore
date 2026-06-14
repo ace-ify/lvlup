@@ -271,3 +271,7 @@ progress.log
 .notebooklm/
 storage_state.json
 
+# Untracked Course Repositories
+ai-engineering-from-scratch/
+
+

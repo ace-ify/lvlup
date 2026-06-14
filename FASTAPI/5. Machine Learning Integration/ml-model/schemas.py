@@ -1,5 +1,4 @@
-from pydantic import BaseModel, Field, StrictInt
-
+from pydantic import BaseModel, StrictInt, Field
 
 class InputSchema(BaseModel):
     longitude: float

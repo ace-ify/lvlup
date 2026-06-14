@@ -1,8 +1,48 @@
+"""
+=========================================================================================
+📘 MODULE 4 SUMMARY & PRODUCTION STUDY GUIDE (CRUD API)
+=========================================================================================
+
+💡 KEY ARCHITECTURAL CONCEPTS & Q/A:
+
+1. How does Python prevent name conflicts between main.py and crud.py?
+   - CONCEPT: Namespace Isolation.
+   - EXPLANATION: Both files have functions like 'create_employee'. However, because we 
+     import crud via `import crud`, we must invoke the database worker with the prefix
+     `crud.create_employee(...)`. The 'crud.' prefix tells Python explicitly to execute the 
+     function inside crud.py rather than calling itself recursively in main.py.
+
+2. Why is 'response_model' set to schemas.EmployeeOut?
+   - CONCEPT: Output Filtering & Security.
+   - EXPLANATION: Database objects contain raw internal keys, timestamps, or hashed passwords.
+     `response_model=schemas.EmployeeOut` filters the outgoing JSON response to only return 
+     the id, name, and email fields. The `orm_mode = True` configuration in schemas.py 
+     allows Pydantic to read these fields directly from SQLAlchemy objects instead of dicts.
+
+3. Why is 'List[schemas.EmployeeOut]' used in GET /employees?
+   - EXPLANATION: GET /employees/{emp_id} retrieves a single database record and returns it 
+     as a single JSON dictionary. GET /employees fetches ALL records and returns a 
+     Python List of records. The List[...] wrapper validates each object inside the list.
+
+4. Why is 'response_model=dict' used in DELETE?
+   - EXPLANATION: When a resource is deleted, we don't return the deleted profile. Instead, 
+     we return a simple status message like `{"detail": "Employee deleted successfully"}`.
+     A simple key-value structure in Python is a dictionary (`dict`), hence the response model.
+
+5. What is the parameter ordering rule for endpoints?
+   - RULE: "Non-default arguments must come before default arguments."
+   - EXPLANATION: Parameters without default values (like `emp_id: int`) must be written first.
+     Parameters with default values (like dependencies `db: Session = Depends(get_db)`) must
+     be placed at the end. Otherwise, Python throws a SyntaxError.
+=========================================================================================
+"""
+
 from fastapi import FastAPI, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from database import Base, engine, SessionLocal
 from typing import List
 import models, crud, schemas
+
 
 # Initialize database tables on application start
 Base.metadata.create_all(bind=engine)

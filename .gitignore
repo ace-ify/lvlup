@@ -264,6 +264,7 @@ misc/*.pdf
 /wiki-links.md
 /organization.md
 /obsidian_blueprint_v2.md
+dsatfuk.md
 
 # Agent State, Run Logs, and NotebookLM Credentials
 todo.json

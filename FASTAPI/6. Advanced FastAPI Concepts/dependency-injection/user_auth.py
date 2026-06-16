@@ -9,7 +9,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 def login(username: str = Form(...), password: str = Form(...)):
     if username == 'john' and password == 'pass123':
         return {'access_token': 'valid_token', 'token_type': 'bearer'}
-    raise HTTPException(status_code=400, detail='Invalid Credentials')
+    # PRODUCTION FIX (Security Standard): Failed authentication should return 
+    # 401 Unauthorized instead of 400 Bad Request, along with the WWW-Authenticate header.
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, 
+        detail='Invalid Credentials',
+        headers={'WWW-Authenticate': 'Bearer'}
+    )
 
 
 def decode_token(token: str):

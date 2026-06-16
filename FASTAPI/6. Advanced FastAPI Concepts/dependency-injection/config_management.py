@@ -1,18 +1,14 @@
 from fastapi import FastAPI, Depends
-
-app = FastAPI()
-
+app=FastAPI()
 
 class Settings:
     def __init__(self):
-        self.api_key = 'my_secret'
-        self.debug = True
-
+        self.api_key='my_secret'
+        self.debug=True
 
 def get_settings():
     return Settings()
 
-
 @app.get('/config')
-def get_conifig(settings: Settings = Depends(get_settings)):
-    return {'api_key': settings.api_key}
+def get_config(settings:Settings=Depends(get_settings)):
+    return {'api_key':settings.api_key}

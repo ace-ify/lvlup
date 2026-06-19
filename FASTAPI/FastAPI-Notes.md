@@ -32,9 +32,17 @@
    - [Serializing Models (Pickle/Joblib)](#2-serializing-models-picklejoblib)
    - [Building the API](#3-building-the-api)
    - [Why Load Globally?](#4-why-load-globally)
-4. [Step-by-Step: Build ANY CRUD API from Scratch](#step-by-step-build-any-crud-api-from-scratch)
+4. [Module 7: Testing & Debugging](#module-7-testing--debugging)
+   - [Pytest Basics](#1-pytest-basics)
+   - [Unit Testing](#2-unit-testing)
+   - [Integration Testing](#3-integration-testing)
+   - [Mocking External Services / ML Models](#4-mocking-external-services--ml-models)
+   - [Advanced Testing: Database Isolation](#5-advanced-testing-database-isolation)
+   - [Debugging: Exception Handling & Logging](#6-debugging-exception-handling--logging)
+5. [Step-by-Step: Build ANY CRUD API from Scratch](#step-by-step-build-any-crud-api-from-scratch)
 
 ---
+
 
 # Module 3: Building APIs
 
@@ -1164,3 +1172,266 @@ FILE RESPONSIBILITIES:
 │ main.py      │ Endpoints + error handling         │
 └──────────────┴───────────────────────────────────┘
 ```
+
+---
+
+# Module 7: Testing & Debugging
+
+Testing ensures your API functions correctly before deployment. In production, we separate testing into **Unit Testing** (testing isolated logic), **Integration Testing** (testing API endpoints), and **Mocking** (simulating external services like databases or ML models).
+
+## 1. Pytest Basics
+
+`pytest` is the most popular testing framework in Python.
+
+### Conventions:
+*   **Files**: Test files must start with `test_` (e.g., `test_logic.py`).
+*   **Functions**: Test functions must start with `test_` (e.g., `test_sum()`).
+*   **Command**: Run tests using `pytest` in your terminal.
+
+---
+
+## 2. Unit Testing
+
+Unit testing validates the smallest testable parts of your application (like mathematical formulas, business rules, or helper functions) in complete isolation.
+
+### Example Code (`app/logic.py`):
+```python
+def is_eligible_for_loan(income: float, age: int, employment_status: str) -> bool:
+    # Loan is approved only if applicant makes >= 50k, is >= 21 years old, and is employed
+    return (income >= 50000) and (age >= 21) and (employment_status == 'employed')
+```
+
+### Test Case Code (`tests/test_logic.py`):
+```python
+import pytest
+from app.logic import is_eligible_for_loan
+
+def test_eligible_user():
+    assert is_eligible_for_loan(60000, 25, 'employed') is True
+
+def test_underage_user():
+    assert is_eligible_for_loan(60000, 19, 'employed') is False
+
+def test_low_income():
+    assert is_eligible_for_loan(30000, 25, 'employed') is False
+
+def test_boundary_case():
+    # Exactly meets criteria
+    assert is_eligible_for_loan(50000, 21, 'employed') is True
+```
+
+---
+
+## 3. Integration Testing
+
+Integration testing verifies how different components of your application interact. In FastAPI, we use `fastapi.testclient.TestClient` to send mock HTTP requests to our endpoints.
+
+### Example Code (`app/main.py`):
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+from app.logic import is_eligible_for_loan
+
+app = FastAPI()
+
+class Applicant(BaseModel):
+    income: float
+    age: int
+    employment_status: str
+
+@app.post('/loan-eligibility')
+def check_eligibility(applicant: Applicant):
+    eligible = is_eligible_for_loan(
+        income=applicant.income,
+        age=applicant.age,
+        employment_status=applicant.employment_status
+    )
+    return {'eligible': eligible}
+```
+
+### Test Case Code (`tests/test_main.py`):
+```python
+from fastapi.testclient import TestClient
+from app.main import app
+
+# Create a test client that wraps the FastAPI app instance
+client = TestClient(app)
+
+def test_eligibility_endpoint_pass():
+    payload = {
+        'income': 60000,
+        'age': 25,
+        'employment_status': 'employed'
+    }
+    response = client.post('/loan-eligibility', json=payload)
+    assert response.status_code == 200
+    assert response.json() == {'eligible': True}
+
+def test_eligibility_endpoint_fail():
+    payload = {
+        'income': 30000,
+        'age': 18,
+        'employment_status': 'unemployed'
+    }
+    response = client.post('/loan-eligibility', json=payload)
+    assert response.status_code == 200
+    assert response.json() == {'eligible': False}
+```
+
+---
+
+## 4. Mocking External Services / ML Models
+
+In production, testing should not call expensive external APIs (like OpenAI) or slow ML models directly. We use `unittest.mock.patch` to intercept these calls and return fake outputs.
+
+### Example Code (`main.py`):
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+from model import model  # Assume this loads a heavy ML model
+
+app = FastAPI()
+
+class IrisFlower(BaseModel):
+    SepalLengthCm: float
+    SepalWidthCm: float
+    PetalLengthCm: float
+    PetalWidthCm: float
+
+@app.post('/predict')
+def predict(data: IrisFlower):
+    features = [[data.SepalLengthCm, data.SepalWidthCm, data.PetalLengthCm, data.PetalWidthCm]]
+    # Heavy model prediction
+    prediction = model.predict(features)
+    return {'prediction': int(prediction[0])}
+```
+
+### Test Case Code (`test_main.py`):
+```python
+from fastapi.testclient import TestClient
+from unittest.mock import patch
+from main import app
+
+client = TestClient(app)
+
+def test_predict_with_mock():
+    # Mock the predict method of the model object loaded in main.py
+    with patch('model.model.predict') as mock_predict:
+        # Define what the fake method call should return
+        mock_predict.return_value = [99]
+        
+        response = client.post(
+            '/predict',
+            json={
+                'SepalLengthCm': 5.5,
+                'SepalWidthCm': 2.1,
+                'PetalLengthCm': 4.3,
+                'PetalWidthCm': 1.25
+            }
+        )
+        assert response.status_code == 200
+        assert response.json() == {'prediction': 99}
+```
+
+---
+
+## 5. Advanced Testing: Database Isolation
+
+When testing APIs that write to a database, you must ensure tests run in isolation using a temporary database (like in-memory SQLite) to prevent polluting your production/development data.
+
+### Setting Up overrides in `tests/conftest.py`:
+```python
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.database import Base, get_db
+from app.main import app
+
+# Create a clean, isolated in-memory SQLite database engine for tests
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@pytest.fixture(scope="function")
+def db_session():
+    # Create the tables
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        # Drop all tables after the test run to clean up
+        Base.metadata.drop_all(bind=engine)
+
+@pytest.fixture(scope="function")
+def client(db_session):
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+            
+    # Inject our mock database session dependency override into FastAPI
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as c:
+        yield c
+    # Clean overrides after the test finishes
+    app.dependency_overrides.clear()
+```
+
+---
+
+## 6. Debugging: Exception Handling & Logging
+
+### Custom Exception Handlers
+FastAPI lets you catch unhandled exceptions globally and return customized JSON messages to clients instead of letting the application leak raw server stack traces.
+
+```python
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    # Log the exact error internally
+    print(f"Server Error occurred: {exc}")
+    # Return a clean error code and standardized response body
+    return JSONResponse(
+        status_code=500,
+        content={'error': 'An internal server error occurred. Please contact support.'}
+    )
+
+@app.get('/exceptions')
+def handle_exceptions():
+    return 1 / 0  # Automatically triggers the custom general_exception_handler
+```
+
+### Configured Telemetry Logger
+Standard print statements should not be used in production. Configure a structured console logger:
+
+```python
+import logging
+from fastapi import FastAPI
+
+app = FastAPI()
+
+# Configure global logger format
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] (line %(lineno)d) - %(levelname)s - %(message)s",
+    datefmt="%m-%d-%Y %H:%M:%S"
+)
+
+@app.get('/debug')
+def debug_route():
+    logging.info('Debug endpoint hit.')
+    return {'message': 'Log emitted successfully.'}
+```
+
+---
+
+### 🇮🇳 Hinglish Summary
+Module 7 mein hum seekhte hain ki testing framework **pytest** standard conventions par kaam karta hai jahan files aur function names `test_` se shuru hote hain. **Unit testing** helper logics ko isolate karke unka output assert karta hai, jabki **Integration testing** FastAPI ke `TestClient` class se API endpoints ko HTTP calls send karke status codes aur payloads check karta hai. Database calls aur third-party services (jaise OpenAI API ya machine learning inference models) ko test suites mein hit nahi kiya jata; unke behavior ko simulate karne ke liye hum `unittest.mock.patch` function ka use karte hain. Production systems mein global exception handling set ki jaati hai (using `@app.exception_handler`) taaki koi runtime code crash pure stack trace ko leak na kare. Saath hi print ki jagah standard `logging` levels (INFO, WARNING, ERROR) aur formatters config set kiya jata hai taaki log-aggregators (like Datadog/CloudWatch) logs ko parser format mein scrape kar sakein.
+

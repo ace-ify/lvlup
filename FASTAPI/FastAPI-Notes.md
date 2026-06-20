@@ -1177,16 +1177,21 @@ FILE RESPONSIBILITIES:
 
 # Module 7: Testing & Debugging
 
-Testing ensures your API functions correctly before deployment. In production, we separate testing into **Unit Testing** (testing isolated logic), **Integration Testing** (testing API endpoints), and **Mocking** (simulating external services like databases or ML models).
+Testing ensures your API functions correctly before deployment. In production, we separate testing into **Unit Testing** (testing isolated logic), **Integration Testing** (testing API endpoints), **Mocking** (simulating external APIs/models), and **End-to-End (E2E) Testing** (testing the complete system flow).
+
+---
 
 ## 1. Pytest Basics
 
-`pytest` is the most popular testing framework in Python.
+`pytest` is the industry-standard testing framework in Python.
 
-### Conventions:
+### Core Conventions:
 *   **Files**: Test files must start with `test_` (e.g., `test_logic.py`).
 *   **Functions**: Test functions must start with `test_` (e.g., `test_sum()`).
 *   **Command**: Run tests using `pytest` in your terminal.
+
+> [!IMPORTANT]
+> **Pytest Counts Functions, Not Asserts:** `pytest` counts the number of **test functions** (functions starting with `test_`), NOT the number of `assert` statements. You can have 20 asserts in a single function; `pytest` will count it as 1 test case. If even one assert fails, the entire test function fails.
 
 ---
 
@@ -1194,30 +1199,37 @@ Testing ensures your API functions correctly before deployment. In production, w
 
 Unit testing validates the smallest testable parts of your application (like mathematical formulas, business rules, or helper functions) in complete isolation.
 
-### Example Code (`app/logic.py`):
+### Example Code (`app/math_helper.py`):
 ```python
-def is_eligible_for_loan(income: float, age: int, employment_status: str) -> bool:
-    # Loan is approved only if applicant makes >= 50k, is >= 21 years old, and is employed
-    return (income >= 50000) and (age >= 21) and (employment_status == 'employed')
+def calculate_discount(price: float, discount: float) -> float:
+    if price < 0 or discount < 0 or discount > 100:
+        raise ValueError("Invalid price or discount percentage")
+    return price - (price * (discount / 100))
+
+def is_password_strong(password: str) -> bool:
+    # Strong if password is at least 8 characters long
+    return len(password) >= 8
 ```
 
-### Test Case Code (`tests/test_logic.py`):
+### Test Case Code (`tests/test_math_helper.py`):
 ```python
 import pytest
-from app.logic import is_eligible_for_loan
+from app.math_helper import calculate_discount, is_password_strong
 
-def test_eligible_user():
-    assert is_eligible_for_loan(60000, 25, 'employed') is True
+def test_calculate_discount_normal():
+    # Test standard working calculation
+    assert calculate_discount(100, 10) == 90.0
 
-def test_underage_user():
-    assert is_eligible_for_loan(60000, 19, 'employed') is False
+def test_calculate_discount_invalid_price():
+    # Test error raising logic using raises context manager
+    with pytest.raises(ValueError):
+        calculate_discount(-100, 10)
 
-def test_low_income():
-    assert is_eligible_for_loan(30000, 25, 'employed') is False
+def test_password_strong():
+    assert is_password_strong("SecurePa$$w0rd!") is True
 
-def test_boundary_case():
-    # Exactly meets criteria
-    assert is_eligible_for_loan(50000, 21, 'employed') is True
+def test_password_weak():
+    assert is_password_strong("weak") is False
 ```
 
 ---
@@ -1226,11 +1238,15 @@ def test_boundary_case():
 
 Integration testing verifies how different components of your application interact. In FastAPI, we use `fastapi.testclient.TestClient` to send mock HTTP requests to our endpoints.
 
+### Query Parameters (GET) vs Request Body (POST)
+*   **GET Requests**: Send data inside the URL as **Query Parameters** (e.g. `/get-weather?city=Lucknow`). GET requests do not have request bodies.
+*   **POST Requests**: Send data inside the **HTTP Request Body** as JSON payload. We pass it via the `json=` parameter in the client call (e.g., `client.post('/loan-eligibility', json=payload)`).
+
 ### Example Code (`app/main.py`):
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel
-from app.logic import is_eligible_for_loan
+from app.logic import is_eligible_for_loan, is_password_strong
 
 app = FastAPI()
 
@@ -1239,14 +1255,22 @@ class Applicant(BaseModel):
     age: int
     employment_status: str
 
+class PasswordData(BaseModel):
+    password: str
+
 @app.post('/loan-eligibility')
 def check_eligibility(applicant: Applicant):
-    eligible = is_eligible_for_loan(
+    eligibility = is_eligible_for_loan(
         income=applicant.income,
         age=applicant.age,
         employment_status=applicant.employment_status
     )
-    return {'eligible': eligible}
+    return {'eligible': eligibility}
+
+@app.post('/password-strength')
+def check_password_strength(data: PasswordData):
+    strong = is_password_strong(data.password)
+    return {'strong': strong}
 ```
 
 ### Test Case Code (`tests/test_main.py`):
@@ -1267,43 +1291,58 @@ def test_eligibility_endpoint_pass():
     assert response.status_code == 200
     assert response.json() == {'eligible': True}
 
-def test_eligibility_endpoint_fail():
-    payload = {
-        'income': 30000,
-        'age': 18,
-        'employment_status': 'unemployed'
-    }
-    response = client.post('/loan-eligibility', json=payload)
+def test_password_weak():
+    payload = {'password': 'weak'}
+    response = client.post('/password-strength', json=payload)
     assert response.status_code == 200
-    assert response.json() == {'eligible': False}
+    assert response.json() == {'strong': False}
 ```
 
 ---
 
 ## 4. Mocking External Services / ML Models
 
-In production, testing should not call expensive external APIs (like OpenAI) or slow ML models directly. We use `unittest.mock.patch` to intercept these calls and return fake outputs.
+In production, testing should not call expensive external APIs (like OpenAI) or slow ML models directly. We use `unittest.mock.patch` to temporarily intercept these calls.
 
-### Example Code (`main.py`):
+### 🧠 First-Principles Concept: Reference Swapping
+When you execute `with patch('model.model.predict') as mock_predict:`, Python:
+1. Takes a backup of the real `predict` function.
+2. Replaces the reference of `model.predict` in memory with an empty `[Fake Function Box]` (a `MagicMock` object).
+3. Connects the test variable `mock_predict` to this same fake box in memory.
+4. Setting `mock_predict.return_value = [99]` configures the fake box to instantly return `[99]` when called.
+5. Inside the server code, `model.predict(features)` calls the fake box and gets `[99]`.
+6. Once the `with` block exits, Python automatically restores the real function reference.
+
+### 🧠 First-Principles Concept: The `return_value` Mock Chain
+When testing HTTP calls like `response = httpx.get(url)` followed by `data = response.json()`, we configure the mock using nested references:
+
+```text
+mock_get                                 # Fake httpx.get function
+   └── .return_value                     # represents the Fake Response object
+          └── .json                      # represents the Fake response.json method
+                 └── .return_value       # represents the Final data dict output
+```
+
 ```python
+# Configure the nested returns in a single line
+mock_get.return_value.json.return_value = {'current': {'temp_c': 25.5}}
+```
+
+### Example Weather Route Code (`main.py`):
+```python
+import httpx
 from fastapi import FastAPI
-from pydantic import BaseModel
-from model import model  # Assume this loads a heavy ML model
 
 app = FastAPI()
 
-class IrisFlower(BaseModel):
-    SepalLengthCm: float
-    SepalWidthCm: float
-    PetalLengthCm: float
-    PetalWidthCm: float
-
-@app.post('/predict')
-def predict(data: IrisFlower):
-    features = [[data.SepalLengthCm, data.SepalWidthCm, data.PetalLengthCm, data.PetalWidthCm]]
-    # Heavy model prediction
-    prediction = model.predict(features)
-    return {'prediction': int(prediction[0])}
+@app.get('/get-weather')
+def get_weather(city: str):
+    # Slow external API call
+    url = f"https://api.weatherapi.com/v1/current.json?key=mock-key&q={city}"
+    response = httpx.get(url)
+    data = response.json()
+    temp_c = data['current']['temp_c']
+    return {'city': city, 'temperature': temp_c}
 ```
 
 ### Test Case Code (`test_main.py`):
@@ -1314,23 +1353,18 @@ from main import app
 
 client = TestClient(app)
 
-def test_predict_with_mock():
-    # Mock the predict method of the model object loaded in main.py
-    with patch('model.model.predict') as mock_predict:
-        # Define what the fake method call should return
-        mock_predict.return_value = [99]
+def test_get_weather_with_mock():
+    # 1. Intercept httpx.get calls
+    with patch('httpx.get') as mock_get:
+        # 2. Setup mock data returned by response.json()
+        mock_get.return_value.json.return_value = {'current': {'temp_c': 25.5}}
         
-        response = client.post(
-            '/predict',
-            json={
-                'SepalLengthCm': 5.5,
-                'SepalWidthCm': 2.1,
-                'PetalLengthCm': 4.3,
-                'PetalWidthCm': 1.25
-            }
-        )
+        # 3. Trigger endpoint
+        response = client.get('/get-weather?city=Lucknow')
+        
+        # 4. Assert
         assert response.status_code == 200
-        assert response.json() == {'prediction': 99}
+        assert response.json() == {'city': 'Lucknow', 'temperature': 25.5}
 ```
 
 ---
@@ -1382,7 +1416,17 @@ def client(db_session):
 
 ---
 
-## 6. Debugging: Exception Handling & Logging
+## 6. End-to-End (E2E) Testing (Concept vs Reality)
+
+In basic courses, E2E test files often mimic integration test code for simplicity. However, in real-world software engineering, E2E testing is completely distinct:
+
+*   **No Mocking (Real Dependencies):** E2E testing runs against real databases (often spun up inside Docker Compose containers) and real sandbox environments (like Stripe test accounts), ensuring that all components (e.g. Postgres DB transactions) actually process.
+*   **Browser/UI Automation:** E2E testing simulates user-actions (button clicks, form filling) using automation tools like **Playwright** or **Selenium** directly on the web browser.
+*   **Testing Scope:** Verifies the complete user journey from frontend UI rendering all the way to backend database state changes.
+
+---
+
+## 7. Debugging: Exception Handling & Logging
 
 ### Custom Exception Handlers
 FastAPI lets you catch unhandled exceptions globally and return customized JSON messages to clients instead of letting the application leak raw server stack traces.
@@ -1397,7 +1441,6 @@ app = FastAPI()
 async def general_exception_handler(request: Request, exc: Exception):
     # Log the exact error internally
     print(f"Server Error occurred: {exc}")
-    # Return a clean error code and standardized response body
     return JSONResponse(
         status_code=500,
         content={'error': 'An internal server error occurred. Please contact support.'}
@@ -1407,6 +1450,14 @@ async def general_exception_handler(request: Request, exc: Exception):
 def handle_exceptions():
     return 1 / 0  # Automatically triggers the custom general_exception_handler
 ```
+
+> [!TIP]
+> **Testing Global Exceptions:** By default, `TestClient` raises exceptions to the test context (`raise_server_exceptions=True`), which crashes the test run. To verify that your global exception handler is returning the correct JSON response (e.g. 500 error code), you must instantiate the client with exceptions disabled:
+> `client = TestClient(app, raise_server_exceptions=False)`
+
+### Windows Security Warning (Smart App Control)
+> [!WARNING]
+> On Windows systems, running python test suites with newly compiled dynamic libraries (like scikit-learn's `.pyd` extensions or `_ssl.pyd`) can crash with `ImportError: DLL load failed: An Application Control policy has blocked this file`. This is an operating system level security blocking unsigned binaries. To resolve this, you must temporarily disable **Smart App Control** in Windows Security settings.
 
 ### Configured Telemetry Logger
 Standard print statements should not be used in production. Configure a structured console logger:
@@ -1433,5 +1484,8 @@ def debug_route():
 ---
 
 ### 🇮🇳 Hinglish Summary
-Module 7 mein hum seekhte hain ki testing framework **pytest** standard conventions par kaam karta hai jahan files aur function names `test_` se shuru hote hain. **Unit testing** helper logics ko isolate karke unka output assert karta hai, jabki **Integration testing** FastAPI ke `TestClient` class se API endpoints ko HTTP calls send karke status codes aur payloads check karta hai. Database calls aur third-party services (jaise OpenAI API ya machine learning inference models) ko test suites mein hit nahi kiya jata; unke behavior ko simulate karne ke liye hum `unittest.mock.patch` function ka use karte hain. Production systems mein global exception handling set ki jaati hai (using `@app.exception_handler`) taaki koi runtime code crash pure stack trace ko leak na kare. Saath hi print ki jagah standard `logging` levels (INFO, WARNING, ERROR) aur formatters config set kiya jata hai taaki log-aggregators (like Datadog/CloudWatch) logs ko parser format mein scrape kar sakein.
+Module 7 mein hum seekhte hain ki testing framework **pytest** standard conventions par kaam karta hai jahan files aur function names `test_` se shuru hote hain. Pytest test case functions ko count karta hai, functions ke andar maujood `assert` lines ke count ko nahi. **Unit testing** helper logics ko isolate karke check karta hai, jabki **Integration testing** FastAPI ke `TestClient` class se API endpoints ko HTTP calls send karke status codes aur payloads check karta hai. GET requests query parameters (`?city=Lucknow`) use karte hain, jabki POST requests body payloads (`json=payload`) use karte hain. 
+
+Database calls aur third-party services (jaise external APIs) ko test suites mein hit nahi kiya jata; unke behavior ko simulate karne ke liye hum `unittest.mock.patch` function se memory swap logic apply karte hain. Nested response formats ko mock karne ke liye `mock_get.return_value.json.return_value` jaisi chained syntax ka use hota hai. Real-world **E2E testing** (Playwright/Selenium) direct browser automation aur real database docker containers par base hoti hai jisme koi mocks use nahi hote. Production systems mein global exception handling set ki jaati hai (`raise_server_exceptions=False` ke sath test client run karke verify karne ke liye) taaki koi runtime code crash pure stack trace ko leak na kare. Windows systems par compiled extensions `ImportError` de sakte hain jise Smart App Control disable karke bypass kiya jata hai.
+
 

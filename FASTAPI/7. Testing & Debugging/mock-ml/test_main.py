@@ -19,3 +19,14 @@ def test_predict_with_mock():
         )
         assert response.status_code == 200
         assert response.json() == {'prediction': 99}
+
+# Challenge 5: Write a test for the '/get-weather' endpoint mocking the external HTTP request.
+# You need to mock 'httpx.get'.
+# Tip: Set mock_get.return_value.json.return_value = {'current': {'temp_c': 25.5}}
+# Then verify that the status code is 200 and the response JSON matches {'city': 'Delhi', 'temperature': 25.5}
+def test_weather():
+    with patch('httpx.get') as mock_get:
+        mock_get.return_value.json.return_value = {'current': {'temp_c': 25.5}}
+        response = client.get('/get-weather?city=Lucknow')
+        assert response.status_code == 200
+        assert response.json() == {'city': 'Lucknow', 'temperature': 25.5}

@@ -1,8 +1,7 @@
 from fastapi.testclient import TestClient
 from app.main import app
 
-client = TestClient(app)
-
+client=TestClient(app)
 
 def test_eligibility_pass():
     payload = {
@@ -10,8 +9,8 @@ def test_eligibility_pass():
         'age': 25,
         'employment_status': 'employed'
     }
-    response = client.post('/loan-eligibility', json=payload)
-    assert response.status_code == 200
+    response=client.post('/loan-eligibility',json=payload)
+    assert response.status_coden    == 200
     assert response.json() == {'eligible': True}
 
 
@@ -39,3 +38,4 @@ def test_password_weak():
     response = client.post('/password-strength', json=payload)
     assert response.status_code == 400
     assert response.json() == {'strong': False}
+

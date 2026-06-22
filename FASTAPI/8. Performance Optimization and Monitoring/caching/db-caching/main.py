@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 app = FastAPI()
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
+redis_client = redis.Redis(host='localhost', port=6379, db=0, protocol=2)
 
 
 # establish database connection
@@ -27,9 +27,9 @@ CREATE TABLE IF NOT EXISTS users(
                    age INTEGER
                    )
 """)
-    cursor.execute("INSERT INTO users (id, name, age) VALUES (1, 'Michael', 45)")
-    cursor.execute("INSERT INTO users (id, name, age) VALUES (2, 'Jim', 35)")
-    cursor.execute("INSERT INTO users (id, name, age) VALUES (3, 'Pam', 27)")
+    cursor.execute("INSERT OR IGNORE INTO users (id, name, age) VALUES (1, 'Michael', 45)")
+    cursor.execute("INSERT OR IGNORE INTO users (id, name, age) VALUES (2, 'Jim', 35)")
+    cursor.execute("INSERT OR IGNORE INTO users (id, name, age) VALUES (3, 'Pam', 27)")
     conn.commit()
     conn.close()
 
@@ -51,8 +51,15 @@ def get_user(query: UserQuery):
     
     cached_data = redis_client.get(cache_key)
     if cached_data:
-        print('Serving from Redis Cache!')
-        return json.loads(cached_data)
+        from datetime import datetime
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        print(f"[{now}] Serving from Redis Cache!")
+        data = json.loads(cached_data)
+        data['served_at'] = now
+        data['source'] = 'Redis Cache'
+        return data
+    
+    from datetime import datetime
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -63,8 +70,17 @@ def get_user(query: UserQuery):
     if row is None:
         return {'message': 'User not found.'}
     
-    result = {'id': row['id'], 'name': row['name'], 'age': row['age']}
+    # Store the exact time we query the database
+    fetched_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    result = {
+        'id': row['id'], 
+        'name': row['name'], 
+        'age': row['age'],
+        'fetched_at': fetched_time,
+        'source': 'Database'
+    }
+    
     redis_client.setex(cache_key, 3600, json.dumps(result))
-    print('Fetched from DB and Cached!')
+    print(f"[{fetched_time}] Fetched from DB and Cached!")
 
     return result

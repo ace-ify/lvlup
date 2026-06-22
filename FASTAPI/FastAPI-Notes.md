@@ -1451,6 +1451,11 @@ def handle_exceptions():
     return 1 / 0  # Automatically triggers the custom general_exception_handler
 ```
 
+#### 🧠 Line-by-Line Breakdown of `exc-handling.py`:
+*   **`@app.exception_handler(Exception)`**: Python decorator that registers a global exception gate. The parameter `Exception` tells FastAPI to catch any subclass of Python errors (e.g. `ZeroDivisionError`, `KeyError`, `IndexError`) before they crash the ASGI server loop.
+*   **`async def general_exception_handler(request: Request, exc: Exception)`**: The asynchronous function triggered when a crash is caught. `request` contains metadata from the client (headers, IP, query params), and `exc` captures the thrown Python exception object.
+*   **`return JSONResponse(status_code=500, content={'error': ...})`**: FastAPI utility that formats raw Python output dictionaries into standardized JSON responses, returning an HTTP status code `500` (Internal Server Error) to the client instead of leaking raw code stack traces.
+
 > [!TIP]
 > **Testing Global Exceptions:** By default, `TestClient` raises exceptions to the test context (`raise_server_exceptions=True`), which crashes the test run. To verify that your global exception handler is returning the correct JSON response (e.g. 500 error code), you must instantiate the client with exceptions disabled:
 > `client = TestClient(app, raise_server_exceptions=False)`
@@ -1480,6 +1485,13 @@ def debug_route():
     logging.info('Debug endpoint hit.')
     return {'message': 'Log emitted successfully.'}
 ```
+
+#### 🧠 Line-by-Line Breakdown of `logging-demo.py`:
+*   **`logging.basicConfig(...)`**: Initializes Python's native logging framework configuration.
+*   **`level=logging.INFO`**: Configures the minimum severity level to log. It captures logs at `INFO`, `WARNING`, `ERROR`, and `CRITICAL` levels, filtering out low-level `DEBUG` logs to prevent spamming output buffers.
+*   **`format="..."`**: Enforces a parsable string layout. `%(asctime)s` injects the timestamp, `(line %(lineno)d)` prints the file line number where the log statement was written, `%(levelname)s` shows log severity (e.g. INFO), and `%(message)s` is the actual log string.
+*   **`datefmt="%m-%d-%Y %H:%M:%S"`**: Standardizes the logging clock date format layout.
+
 
 ---
 

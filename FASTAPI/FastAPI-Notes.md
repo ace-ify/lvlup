@@ -1678,8 +1678,22 @@ python -c "import pstats; p = pstats.Stats('profiles/filename.prof'); p.strip_di
 
 ---
 
+#### 🎯 Level 3: Line-by-Line Profiling (Line Profiler)
+While `cProfile` identifies slow functions, `line-profiler` highlights the exact lines of code within those functions causing the latency.
+
+*   **Syntax & `@profile` Decorator:** We place the `@profile` decorator on top of the function we want to examine. We do not import this decorator; the runner utility injects it during execution.
+*   **Execution with `kernprof`:** Use the `kernprof` tool (managed via `uv run` to ensure correct virtual environment python version binds):
+    ```bash
+    uv run --with line-profiler python -m kernprof -l -v profiling_test.py
+    #                                              ↑  ↑
+    #                   line-by-line profiling  ───┘  └─── verbose (print directly to console)
+    ```
+
+---
+
 ### 🇮🇳 Hinglish Summary
 Module 8 ke caching aur profiling sections mein humne seekha ki APIs ki speed optimize karne ke liye Redis (RAM-based cache) ka use karte hain. Windows environment par client connection setup ke liye `protocol=2` set kiya jata hai. 
 
-Code bottlenecks diagnosis ke liye hum **Profiling** use karte hain. Middleware ke through `time.time()` stopwatch lagakar basic response duration calculate ki jati hai. Deep diagnostics ke liye Python ka **cProfile** library enable karke pure code structure (function execution counts aur execution duration) ko analyze kiya jata hai aur stats binary `.prof` format mein save hote hain. In binary files ko read karne ke liye Python ki built-in **`pstats`** library se `tottime` (total function internal time) aur `cumtime` (cumulative nested execution time) sort karke display kiya jata hai.
+Code bottlenecks diagnosis ke liye hum **Profiling** use karte hain. Middleware ke through `time.time()` stopwatch lagakar basic response duration calculate ki jati hai. Deep diagnostics ke liye Python ka **cProfile** library enable karke pure code structure (function execution counts aur execution duration) ko analyze kiya jata hai aur stats binary `.prof` format mein save hote hain. In binary files ko read karne ke liye Python ki built-in **`pstats`** library se `tottime` (total function internal time) aur `cumtime` (cumulative nested execution time) sort karke display kiya jata hai. **Line Profiler** ka use karke hum function ke andar `@profile` decorator lagakar `kernprof` CLI ke through ek-ek line ka execution microseconds percentage check kar sakte hain, jisse slow lines (jaise database operations or CPU loops) directly detect ho jaati hain.
+
 

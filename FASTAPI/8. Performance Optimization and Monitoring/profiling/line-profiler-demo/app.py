@@ -3,7 +3,7 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-
+@profile
 def computation(n: int):
     res = 0
     for i in range(n):

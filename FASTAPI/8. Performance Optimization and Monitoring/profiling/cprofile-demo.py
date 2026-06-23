@@ -22,7 +22,7 @@ async def create_profile(request: Request, call_next):
 
     response = await call_next(request)
 
-    profiler.disable()
+    # profiler.disable()
     profiler.dump_stats(profile_name)
 
     print(f'Profile saved: {profile_name}')

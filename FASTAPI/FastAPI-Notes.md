@@ -1609,7 +1609,77 @@ Saves computationally heavy inference calculations (`model.predict()`).
 
 ---
 
-### 🇮🇳 Hinglish Summary
-Module 8 ke pehle part mein humne **Redis Caching** seekha. Redis ek fast, in-memory (RAM-based) database hai jo data ko key-value pairs ke roop mein save karta hai taaki SSD/Hard-disk read latency bypass ki ja sake. Windows systems par local compatibility ke liye hum `protocol=2` parameter use karte hain kyunki Windows build standard `RESP3` commands support nahi karta. 
+## 2. Profiling & Bottlenecks
 
-Hum teen caching patterns cover karte hain: **Database Caching** (jahan data read-through workflow se cache hota hai), **External API Caching** (jahan external third-party servers ke response caches banakar network load kam kiya jata hai), aur **ML Prediction Caching** (jahan computational model predictions ko input values ko hash karke store kiya jata hai). ML input parameters ko cache-key mein convert karte waqt `sort_keys=True` lagana zaroori hai taaki key sequence variation se hash key change na ho. Agar data DB mein badalta hai, toh cache ko empty karne ke liye `redis_client.delete` se invalidation process trigger kiya jata hai.
+Profiling is the process of measuring the execution time, resource usage, and function call count of an application to locate performance bottlenecks.
+
+### ⏱️ Level 1: Request Time Monitoring (FastAPI Middleware)
+Uses a custom middleware to intercept incoming requests, run a stopwatch, and log the elapsed time to the console.
+
+```python
+import time
+import logging
+from fastapi import FastAPI, Request
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('profiler')
+app = FastAPI()
+
+@app.middleware('http')
+async def add_timing(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)  # Pass request to actual endpoint
+    time_taken = time.time() - start_time
+    logger.info(f"Request to {request.url.path} took {time_taken:.3f} seconds")
+    return response
+```
+*   **`await call_next(request)`**: Essential! Removing the `await` keyword returns an un-evaluated Python coroutine instead of the actual HTTP response, causing a crash.
+
+---
+
+### 📊 Level 2: Deep CPU Profiling (cProfile Middleware)
+cProfile records every function call, system method, and generator evaluation inside the request lifecycle, saving them as binary `.prof` statistics files.
+
+```python
+import os
+import cProfile
+import datetime
+from fastapi import FastAPI, Request
+
+PROFILES_DIR = 'profiles'
+os.makedirs(PROFILES_DIR, exist_ok=True)
+app = FastAPI()
+
+@app.middleware('http')
+async def create_profile(request: Request, call_next):
+    time_stamp = datetime.datetime.now().strftime('%m_%d_%Y_%H_%M_%S_%f')
+    profile_name = os.path.join(PROFILES_DIR, f'profile_{time_stamp}.prof')
+
+    profiler = cProfile.Profile()
+    profiler.enable()  # Start recording stats
+
+    response = await call_next(request)
+
+    profiler.disable()  # Stop recording before dumping to avoid contaminating profile data
+    profiler.dump_stats(profile_name)
+
+    return response
+```
+*   **Profiler Contamination:** Always call `profiler.disable()` *before* writing files (`dump_stats`), otherwise the stats file will include the overhead of the profiler's own disk operations and file writes.
+
+#### 📈 Reading `.prof` files (PStats)
+Because `.prof` files are binary, they cannot be read in a normal text editor. Use Python's built-in `pstats` package to sort and print statistics:
+```bash
+python -c "import pstats; p = pstats.Stats('profiles/filename.prof'); p.strip_dirs().sort_stats('tottime').print_stats(15)"
+```
+*   **`ncalls`:** Number of times the function was called.
+*   **`tottime` (Total Time):** Total time spent in the function itself (excluding nested sub-calls). Perfect for finding raw code bottlenecks.
+*   **`cumtime` (Cumulative Time):** Total time spent in the function and all its helper sub-calls.
+
+---
+
+### 🇮🇳 Hinglish Summary
+Module 8 ke caching aur profiling sections mein humne seekha ki APIs ki speed optimize karne ke liye Redis (RAM-based cache) ka use karte hain. Windows environment par client connection setup ke liye `protocol=2` set kiya jata hai. 
+
+Code bottlenecks diagnosis ke liye hum **Profiling** use karte hain. Middleware ke through `time.time()` stopwatch lagakar basic response duration calculate ki jati hai. Deep diagnostics ke liye Python ka **cProfile** library enable karke pure code structure (function execution counts aur execution duration) ko analyze kiya jata hai aur stats binary `.prof` format mein save hote hain. In binary files ko read karne ke liye Python ki built-in **`pstats`** library se `tottime` (total function internal time) aur `cumtime` (cumulative nested execution time) sort karke display kiya jata hai.
+

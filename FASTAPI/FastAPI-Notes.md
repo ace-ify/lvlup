@@ -41,6 +41,8 @@
    - [Debugging: Exception Handling & Logging](#6-debugging-exception-handling--logging)
 5. [Module 8: Performance Optimization & Monitoring](#module-8-performance-optimization--monitoring)
    - [Redis Caching (Database, API, ML)](#1-redis-caching-database-api-ml)
+   - [Profiling & Bottlenecks (cProfile, Line Profiler)](#2-profiling--bottlenecks)
+   - [Load Testing with Locust](#3-load-testing-with-locust)
 6. [Step-by-Step: Build ANY CRUD API from Scratch](#step-by-step-build-any-crud-api-from-scratch)
 
 ---

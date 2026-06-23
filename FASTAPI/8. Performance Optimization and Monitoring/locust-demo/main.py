@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import time
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -16,5 +17,6 @@ def home():
 
 @app.post('/predict')
 def predict(data: InputData):
+    time.sleep(2)
     result = data.feature1 + data.feature2
     return {'result': result}

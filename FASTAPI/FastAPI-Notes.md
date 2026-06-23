@@ -39,7 +39,9 @@
    - [Mocking External Services / ML Models](#4-mocking-external-services--ml-models)
    - [Advanced Testing: Database Isolation](#5-advanced-testing-database-isolation)
    - [Debugging: Exception Handling & Logging](#6-debugging-exception-handling--logging)
-5. [Step-by-Step: Build ANY CRUD API from Scratch](#step-by-step-build-any-crud-api-from-scratch)
+5. [Module 8: Performance Optimization & Monitoring](#module-8-performance-optimization--monitoring)
+   - [Redis Caching (Database, API, ML)](#1-redis-caching-database-api-ml)
+6. [Step-by-Step: Build ANY CRUD API from Scratch](#step-by-step-build-any-crud-api-from-scratch)
 
 ---
 
@@ -1501,3 +1503,113 @@ Module 7 mein hum seekhte hain ki testing framework **pytest** standard conventi
 Database calls aur third-party services (jaise external APIs) ko test suites mein hit nahi kiya jata; unke behavior ko simulate karne ke liye hum `unittest.mock.patch` function se memory swap logic apply karte hain. Nested response formats ko mock karne ke liye `mock_get.return_value.json.return_value` jaisi chained syntax ka use hota hai. Real-world **E2E testing** (Playwright/Selenium) direct browser automation aur real database docker containers par base hoti hai jisme koi mocks use nahi hote. Production systems mein global exception handling set ki jaati hai (`raise_server_exceptions=False` ke sath test client run karke verify karne ke liye) taaki koi runtime code crash pure stack trace ko leak na kare. Windows systems par compiled extensions `ImportError` de sakte hain jise Smart App Control disable karke bypass kiya jata hai.
 
 
+---
+
+# Module 8: Performance Optimization & Monitoring
+
+## 1. Redis Caching (Database, API, ML)
+
+Caching is the process of storing copies of data in a high-speed, in-memory data store (like **Redis**) so that future requests can be served much faster.
+
+### Why Redis is Fast:
+*   **In-Memory Storage:** Traditional databases (PostgreSQL, SQLite) write and read from hard disks/SSDs (latency: ~10ms - 50ms). Redis stores data directly in the system **RAM** (latency: < 1ms).
+*   **Key-Value Structure:** It acts like a giant Python dictionary (`{key: value}`) shared across all running servers.
+
+### 🔌 Windows Setup & Compatibility (Local Simulation)
+Redis officially only runs on Linux/Docker. For local developer environments on Windows:
+*   **Compatibility Parameter:** Python's `redis` client defaults to the `RESP3` protocol which uses the `HELLO` command. Older Windows ports of Redis (like version 5.0.14) do not support it. We must initialize our client using `protocol=2`:
+    `redis_client = redis.Redis(host='localhost', port=6379, db=0, protocol=2)`
+*   **Git Best Practice:** Never commit Redis server binaries or local ZIPs to git. Add `redis/` to your `.gitignore`.
+
+---
+
+### 🗄️ Pattern 1: Database Caching (Read-Through Cache)
+Avoids hitting the slower relational database for records that rarely change.
+
+```python
+import redis
+import json
+import hashlib
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+redis_client = redis.Redis(host='localhost', port=6379, db=0, protocol=2)
+
+class UserQuery(BaseModel):
+    user_id: int
+
+def make_cache_key(user_id: int):
+    raw = f"user:{user_id}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+@app.post('/get-user')
+def get_user(query: UserQuery):
+    cache_key = make_cache_key(query.user_id)
+    
+    # 1. Look in Redis RAM Cache
+    cached_data = redis_client.get(cache_key)
+    if cached_data:
+        print('Serving from Redis Cache!')
+        return json.loads(cached_data)  # Parse string back to dictionary
+    
+    # 2. Cache Miss - Hit the DB
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (query.user_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return {'message': 'User not found.'}
+    
+    result = {'id': row['id'], 'name': row['name'], 'age': row['age']}
+    
+    # 3. Store result in Cache with a TTL (Time-To-Live) of 1 hour (3600 seconds)
+    redis_client.setex(cache_key, 3600, json.dumps(result))
+    print('Fetched from DB and Cached!')
+
+    return result
+```
+
+#### 🔄 Cache Invalidation (Clearing Cache)
+When data in the database is modified/updated, the old cache must be cleared so the client doesn't receive stale data. We do this by deleting the key:
+```python
+@app.post('/clear-cache')
+def clear_cache(query: UserQuery):
+    cache_key = make_cache_key(query.user_id)
+    redis_client.delete(cache_key)  # Removes the key from Redis RAM
+    return {'message': f'Cache cleared successfully for user {query.user_id}.'}
+```
+
+---
+
+### 🌐 Pattern 2: External API Caching
+Used when our server queries a third-party API. Network requests are slow and often subject to rate-limiting or pay-per-call models.
+
+*   **Workflow:**
+    1. Build cache key based on the external query parameter (e.g., `external_api:post_{post_id}`).
+    2. Try to get it from Redis cache first.
+    3. If not cached, send an async network request using `httpx.AsyncClient()`.
+    4. Save the returned JSON string in Redis cache (`redis_client.setex`) and return it.
+
+---
+
+### 🤖 Pattern 3: Machine Learning Model Caching
+Saves computationally heavy inference calculations (`model.predict()`).
+
+*   **Key Sorting Challenge:** To generate a unique cache key for ML inputs, we serialize the input features using `json.dumps(..., sort_keys=True)`. Sorting keys is critical because if the request features arrive in a different JSON key order, the SHA256 hash would mismatch, causing an unnecessary cache miss for identical parameters.
+*   **Workflow:**
+    ```python
+    # Inside Request Pydantic Model
+    def cache_key(self):
+        raw = json.dumps(self.model_dump(), sort_keys=True) # Ensure same sorting order
+        return f"Predict: {hashlib.sha256(raw.encode()).hexdigest()}"
+    ```
+
+---
+
+### 🇮🇳 Hinglish Summary
+Module 8 ke pehle part mein humne **Redis Caching** seekha. Redis ek fast, in-memory (RAM-based) database hai jo data ko key-value pairs ke roop mein save karta hai taaki SSD/Hard-disk read latency bypass ki ja sake. Windows systems par local compatibility ke liye hum `protocol=2` parameter use karte hain kyunki Windows build standard `RESP3` commands support nahi karta. 
+
+Hum teen caching patterns cover karte hain: **Database Caching** (jahan data read-through workflow se cache hota hai), **External API Caching** (jahan external third-party servers ke response caches banakar network load kam kiya jata hai), aur **ML Prediction Caching** (jahan computational model predictions ko input values ko hash karke store kiya jata hai). ML input parameters ko cache-key mein convert karte waqt `sort_keys=True` lagana zaroori hai taaki key sequence variation se hash key change na ho. Agar data DB mein badalta hai, toh cache ko empty karne ke liye `redis_client.delete` se invalidation process trigger kiya jata hai.

@@ -36,10 +36,26 @@ async def predict(data: IrisFlower):
 
     cached_result = redis_client.get(key)
     if cached_result:
-        print('Serving prediction from Cache!')
-        return json.loads(cached_result)
+        from datetime import datetime
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        print(f"[{now}] Serving prediction from Cache!")
+        result = json.loads(cached_result)
+        result['served_at'] = now
+        result['source'] = 'Redis Cache'
+        return result
     
+    # Simulate ML model prediction
     prediction = model.predict([data.to_list()])[0]
-    result = {'prediction': int(prediction)}
+    
+    from datetime import datetime
+    fetched_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    
+    result = {
+        'prediction': int(prediction),
+        'fetched_at': fetched_time,
+        'source': 'ML Model'
+    }
+    
     redis_client.set(key, json.dumps(result), ex=3600)
+    print(f"[{fetched_time}] Model predicted and saved in Cache!")
     return result

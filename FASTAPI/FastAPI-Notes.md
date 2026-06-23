@@ -1,13 +1,23 @@
-# 📘 FastAPI Complete Notes — Module 3 & 4 & 5
+# 📘 FastAPI Complete Notes — Modules 1 to 8
 
-> Covers: Building APIs, Pydantic Models, Validation, Async, Database Integration, CRUD Operations, Machine Learning
+> Covers: API Basics, FastAPI Intro, Building APIs, Database Integration, ML Integration, Advanced Concepts, Testing, and Performance Tuning.
 > These notes are written for deep understanding — not for cramming.
 
 ---
 
 ## Table of Contents
 
-1. [Module 3: Building APIs](#module-3-building-apis)
+1. [Module 1: Introduction to APIs](#module-1-introduction-to-apis)
+   - [Definition & Key Features](#definition--key-features)
+   - [Types of APIs](#types-of-apis)
+   - [API Protocols](#api-protocols)
+   - [API Lifecycle](#api-lifecycle)
+   - [Authentication vs Authorization](#authentication-vs-authorization)
+2. [Module 2: Introduction to FastAPI](#module-2-introduction-to-fastapi)
+   - [What is FastAPI?](#what-is-fastapi)
+   - [Core Architecture (Starlette, Pydantic, Uvicorn)](#core-architecture)
+   - [Comparison of Python Web Frameworks](#comparison-of-python-web-frameworks)
+3. [Module 3: Building APIs](#module-3-building-apis)
    - [The Basics — Creating a FastAPI App](#1-the-basics--creating-a-fastapi-app)
    - [HTTP Methods & Endpoints](#2-http-methods--endpoints)
    - [Path Parameters vs Query Parameters](#3-path-parameters-vs-query-parameters)
@@ -17,7 +27,7 @@
    - [HTTPException — Error Handling](#7-httpexception--error-handling)
    - [In-Memory CRUD (No Database)](#8-in-memory-crud-no-database)
    - [Sync vs Async](#9-sync-vs-async)
-2. [Module 4: Database Integration](#module-4-database-integration)
+4. [Module 4: Database Integration](#module-4-database-integration)
    - [Why a Database?](#1-why-a-database)
    - [SQLAlchemy — The ORM](#2-sqlalchemy--the-orm)
    - [Project Structure for DB CRUD](#3-project-structure-for-db-crud)
@@ -27,26 +37,109 @@
    - [crud.py — The Workers](#7-crudpy--the-workers)
    - [main.py — The Receptionist](#8-mainpy--the-receptionist)
    - [Dependency Injection — get_db()](#9-dependency-injection--get_db)
-3. [Module 5: Machine Learning Integration](#module-5-machine-learning-integration)
+5. [Module 5: Machine Learning Integration](#module-5-machine-learning-integration)
    - [The ML Workflow](#1-the-ml-workflow)
    - [Serializing Models (Pickle/Joblib)](#2-serializing-models-picklejoblib)
    - [Building the API](#3-building-the-api)
    - [Why Load Globally?](#4-why-load-globally)
-4. [Module 7: Testing & Debugging](#module-7-testing--debugging)
+6. [Module 6: Advanced FastAPI Concepts](#module-6-advanced-fastapi-concepts)
+   - [Middlewares (CORS, GZip, HTTPSRedirect, Custom)](#1-middlewares)
+   - [Dependency Injection (Depends, Config, Auth)](#2-dependency-injection)
+   - [JWT Authentication (Structure, Passlib, Flow)](#3-jwt-authentication)
+   - [Managing API Keys (Headers, Env variables)](#4-managing-api-keys)
+7. [Module 7: Testing & Debugging](#module-7-testing--debugging)
    - [Pytest Basics](#1-pytest-basics)
    - [Unit Testing](#2-unit-testing)
    - [Integration Testing](#3-integration-testing)
    - [Mocking External Services / ML Models](#4-mocking-external-services--ml-models)
    - [Advanced Testing: Database Isolation](#5-advanced-testing-database-isolation)
    - [Debugging: Exception Handling & Logging](#6-debugging-exception-handling--logging)
-5. [Module 8: Performance Optimization & Monitoring](#module-8-performance-optimization--monitoring)
+8. [Module 8: Performance Optimization & Monitoring](#module-8-performance-optimization--monitoring)
    - [Redis Caching (Database, API, ML)](#1-redis-caching-database-api-ml)
    - [Profiling & Bottlenecks (cProfile, Line Profiler)](#2-profiling--bottlenecks)
    - [Load Testing with Locust](#3-load-testing-with-locust)
-6. [Step-by-Step: Build ANY CRUD API from Scratch](#step-by-step-build-any-crud-api-from-scratch)
+   - [Telemetry & Observability (Prometheus)](#4-telemetry--observability-prometheus)
+   - [Grafana Dashboard Visualization](#-grafana-dashboard-visualization)
+9. [Step-by-Step: Build ANY CRUD API from Scratch](#step-by-step-build-any-crud-api-from-scratch)
+---
+
+# Module 1: Introduction to APIs
+
+## Definition & Key Features
+An **API (Application Programming Interface)** is a set of rules and protocols that allows different software applications to communicate and share data effortlessly. It acts as a bridge, enabling systems to interact without directly exposing or accessing each other's underlying codebase.
+
+*   **Reusability:** Saves development time by using pre-built components (e.g. Google Maps API).
+*   **Security:** Provides controlled, secure data access and enforces authentication/compliance policies.
 
 ---
 
+## Types of APIs
+1.  **Web API:** Accessible over the internet using HTTP/HTTPS (e.g. fetching weather via OpenWeather).
+2.  **Library API:** Exposes code methods for programmers within a language framework (e.g. NumPy, TensorFlow).
+3.  **Remote API:** Interacts with systems over networks (e.g. AWS EC2 API, Google Drive API).
+4.  **Database API:** Standardizes database queries and CRUD operations (e.g. MongoDB API, MySQL Connector).
+5.  **Hardware API:** Allows software to control physical sensors/hardware (e.g. CUDA for GPUs).
+6.  **GUI API:** Provides interfaces for frontend window components (e.g. Tkinter, Android SDK).
+
+---
+
+## API Protocols
+*   **REST (Representational State Transfer):** Lightweight, stateless architectural style that maps actions to HTTP methods (GET, POST, PUT, DELETE) using URLs to represent resources.
+*   **SOAP (Simple Object Access Protocol):** Strict, XML-based messaging protocol designed for high-security enterprise systems with built-in error handling (WS-Security).
+*   **GraphQL:** Query language allowing clients to request precisely the fields they need, eliminating over-fetching.
+*   **gRPC:** High-performance framework by Google using **Protocol Buffers (Protobuf)** over HTTP/2 for bidirectional streaming and compact payloads.
+*   **WebSocket:** Low-latency protocol offering full-duplex, persistent TCP connections for real-time applications.
+
+---
+
+## API Lifecycle
+1.  **Planning and Design:** Define user goals, endpoints, naming conventions, and formats.
+2.  **Development:** Implement logic, add security, write unit tests.
+3.  **Deployment:** Deploy to staging and production, managing routing with an API Gateway (AWS Gateway, Kong).
+4.  **Monitoring & Management:** Track response times, errors, and apply rate limiting.
+5.  **Versioning:** Ensure changes don't break existing client integrations.
+6.  **Retirement:** Deprecate and securely retire APIs when obsolete.
+
+---
+
+## Authentication vs Authorization
+*   **Authentication (AuthN):** *"Who are you?"* Verifies identity using credentials, tokens, or API Keys.
+*   **Authorization (AuthZ):** *"What can you do?"* Determines resource permissions (e.g. via Role-Based Access Control / RBAC).
+
+---
+
+# Module 2: Introduction to FastAPI
+
+## What is FastAPI?
+FastAPI is a modern, high-performance Python web framework built specifically for design efficiency, data validation, and asynchronous processing. 
+
+### Key Features:
+*   **High Performance:** Among the fastest Python frameworks, comparable to Go and Node.js.
+*   **Automatic Docs:** Generates Swagger UI (`/docs`) and ReDoc (`/redoc`) instantly from Pydantic schemas.
+*   **Type Safety:** Uses Python 3.7+ standard type hints for automated request validation.
+
+---
+
+## Core Architecture
+FastAPI stands on the shoulders of three key technologies:
+1.  **Starlette:** The core ASGI toolkit handling web routing, WebSockets, and server lifecycle.
+2.  **Pydantic:** Handles data parsing, serialization, and schema validation.
+3.  **Uvicorn:** A fast ASGI server implementation for executing asynchronous web requests.
+
+---
+
+## Comparison of Python Web Frameworks
+
+| Feature | FastAPI | Flask | Django | Falcon |
+|---|---|---|---|---|
+| **Release Year** | 2018 | 2010 | 2005 | 2013 |
+| **Async Support** | Native (async/await) | Limited (extensions) | Partial (since 3.1) | Full |
+| **Performance** | Very High (ASGI) | Moderate (WSGI) | Moderate | Very High |
+| **Type Validation**| Built-in (Pydantic) | Manual | Manual / DRF | Manual |
+| **Documentation** | Auto (Swagger/ReDoc) | No (Third-party) | Yes (DRF only) | No |
+| **Batteries** | Light / Modular | Minimal | Full-stack ORM | Minimal |
+
+---
 
 # Module 3: Building APIs
 
@@ -1179,6 +1272,98 @@ FILE RESPONSIBILITIES:
 
 ---
 
+# Module 6: Advanced FastAPI Concepts
+
+## 1. Middlewares
+Middleware intercepts HTTP requests before they hit endpoint handlers, and outgoing responses after the handler finishes.
+
+### Built-in Middlewares:
+*   **CORS (Cross-Origin Resource Sharing):** Controls which external origins can make browser-based API calls.
+    ```python
+    from fastapi.middleware.cors import CORSMiddleware
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
+    ```
+*   **GZip:** Compresses large JSON payloads automatically to reduce bandwidth usage.
+*   **HTTPSRedirect:** Forces HTTP requests to redirect to secure HTTPS connections.
+
+### Custom Middleware:
+```python
+from fastapi import FastAPI, Request
+import time
+
+app = FastAPI()
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)  # Process request
+    duration = time.time() - start_time
+    print(f"Path: {request.url.path} | Duration: {duration:.4f}s")
+    return response
+```
+
+---
+
+## 2. Dependency Injection
+FastAPI provides a powerful Dependency Injection system using `Depends()`. It lets you reuse logic (e.g. database sessions, authentication, configs) cleanly.
+
+```python
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+def get_query_param(q: str = None):
+    return q
+
+@app.get("/items")
+def read_items(query: str = Depends(get_query_param)):
+    return {"query": query}
+```
+
+---
+
+## 3. JWT Authentication
+JSON Web Tokens (JWT) allow stateless, secure sessions. The token consists of three parts: **Header** (alg/metadata), **Payload** (claims/expires), and **Signature** (verifies integrity).
+
+### Installation:
+```bash
+pip install fastapi uvicorn authlib passlib[bcrypt]
+```
+
+### JWT Security Flow (auth.py & main.py):
+1.  **Hashed Password Check:** We store passwords hashed using `bcrypt` via `passlib`.
+2.  **Login & Token Issuance (`/token`):** On correct login credentials, generate JWT using a secret key and signature algorithm (HS256).
+3.  **Protected Routes Verification:** User routes use `Depends(oauth2_scheme)` which reads the authorization header (`Bearer <token>`), decodes it, and validates expiry.
+
+---
+
+## 4. Managing API Keys
+For machine-to-machine APIs or third-party client integrations, API Keys passed in request Headers are used.
+
+### Reading Keys via Pydantic Settings & Headers:
+```python
+from fastapi import FastAPI, Header, HTTPException, Depends
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    api_key: str
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+
+def verify_api_key(api_key: str = Header(..., alias="api-key")):
+    if api_key != settings.api_key:
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+    return api_key
+
+@app.get("/secure-data")
+def secure_data(key: str = Depends(verify_api_key)):
+    return {"data": "Super secret database records"}
+```
+
+---
+
 # Module 7: Testing & Debugging
 
 Testing ensures your API functions correctly before deployment. In production, we separate testing into **Unit Testing** (testing isolated logic), **Integration Testing** (testing API endpoints), **Mocking** (simulating external APIs/models), and **End-to-End (E2E) Testing** (testing the complete system flow).
@@ -1743,12 +1928,123 @@ There are two primary ways a server breaks down under load:
 
 ---
 
+## 4. Telemetry & Observability (Prometheus)
+
+Telemetry refers to the automated remote collection and measurement of application performance metrics over long periods in production environments.
+
+### 📊 Prometheus Metrics Scraper
+Prometheus operates on a **Pull/Scrape model** where it calls a specific endpoint of your application (usually `/metrics`) periodically to collect performance statistics.
+
+#### 🔧 Setup in FastAPI
+Using the `prometheus-fastapi-instrumentator` package, metrics collection can be enabled in a single line:
+
+```python
+from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
+
+app = FastAPI()
+
+# Auto-collect metrics and expose them on /metrics endpoint
+Instrumentator().instrument(app).expose(app)
+
+@app.get('/home')
+def home():
+    return {'message': 'Prometheus Demo'}
+```
+
+### 📈 Promethean Metric Formats Explained
+*   **`http_requests_total` (Counter):** The total number of HTTP requests received, segmented by path, method (GET/POST), and status code range (e.g. `2xx`, `5xx`).
+*   **`http_request_duration_seconds` (Histogram):** Distribution of latency times across predefined buckets (e.g., requests taking <= 0.1s, <= 0.5s, or +Inf). This helps track response time distribution.
+*   **`python_gc_collections_total` (Counter):** Tracks Python garbage collection statistics, useful for locating memory leaks.
+
+---
+
 ### 🇮🇳 Hinglish Summary
-Module 8 ke caching, profiling aur load testing sections mein humne seekha ki APIs ki speed optimize karne ke liye Redis (RAM-based cache) ka use karte hain. Windows environment par client connection setup ke liye `protocol=2` set kiya jata hai. 
+Module 8 ke caching, profiling, load testing aur observability sections mein humne seekha ki APIs ki speed optimize karne ke liye Redis (RAM-based cache) ka use karte hain. Windows environment par client connection setup ke liye `protocol=2` set kiya jata hai. 
 
 Code bottlenecks diagnosis ke liye hum **Profiling** use karte hain. Middleware ke through `time.time()` stopwatch lagakar basic response duration calculate ki jati hai. Deep diagnostics ke liye Python ka **cProfile** library enable karke pure code structure (function execution counts aur execution duration) ko analyze kiya jata hai aur stats binary `.prof` format mein save hote hain. In binary files ko read karne ke liye Python ki built-in **`pstats`** library se `tottime` (total function internal time) aur `cumtime` (cumulative nested execution time) sort karke display kiya jata hai. **Line Profiler** ka use karke hum function ke andar `@profile` decorator lagakar `kernprof` CLI ke through ek-ek line ka execution microseconds percentage check kar sakte hain, jisse slow lines (jaise database operations or CPU loops) directly detect ho jaati hain.
 
 Server capacity check karne ke liye hum **Locust** library se concurrent load testing karte hain. `HttpUser` class ka use karke virtual users generate kiye jate hain jo random intervals (`wait_time = between(1, 2)`) par requests bhejte hain. Locust dashboard (`localhost:8089`) par **RPS**, **Failures %**, aur **Percentiles** (Median, 95%ile, 99%ile) analyze karke server bottleneck find kiya jata hai. Agar `async def` endpoint ke andar synchronous `time.sleep` call kiya jaye, toh event loop freeze ho jata hai, jisse system performance drop ho jati hai aur failures 100% tak chale jate hain.
+
+Production systems mein telemetry and tracking ke liye **Prometheus** metrics export kiye jate hain. FastAPI mein `Instrumentator().instrument(app).expose(app)` line se `/metrics` endpoint add kiya jata hai, jisse dynamic HTTP traffic counts, response latency histograms aur GC collections raw text format mein Prometheus scraper ke liye exposed rehte hain.
+
+---
+
+### 🎨 Grafana Dashboard Visualization
+
+While Prometheus collects and stores raw metric logs, reading text-based metrics is challenging. **Grafana** connects to Prometheus and turns raw numbers into beautiful, interactive, real-time dashboard graphs.
+
+#### 🐳 Multi-Container Orchestration (`docker-compose.yml`)
+To run FastAPI, Prometheus, and Grafana together seamlessly, we use Docker Compose to define a multi-container environment on a shared bridge network (`monitor-net`):
+
+```yaml
+version: "3.8"
+
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: fastapi
+    ports:
+      - "8000:8000"
+    depends_on:
+      - prometheus
+    networks:
+      - monitor-net
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - monitor-net
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - monitor-net
+
+networks:
+  monitor-net:
+    driver: bridge
+```
+
+#### ⚙️ Configuring Prometheus Data Source in Grafana
+Once the containers are running (`docker-compose up --build`):
+1. Open your browser and navigate to **Grafana**: `http://localhost:3000`.
+2. Log in with the default credentials: **username:** `admin`, **password:** `admin` (change or skip password reset if prompted).
+3. Navigate to **Connections** -> **Data Sources** -> **Add Data Source**.
+4. Select **Prometheus** as the type.
+5. In the Connection URL, enter the container address: `http://prometheus:9090` (using the container hostname from Docker Compose).
+6. Click **Save & test**. You should see the message: *"Data source is working"*.
+
+#### 📊 Importing a Pre-Built FastAPI Dashboard
+Instead of creating dashboards from scratch, you can import a standard template:
+1. Navigate to **Dashboards** -> **New** -> **Import**.
+2. Under "Import via grafana.com", enter Dashboard ID: `16110` (or `12489` for general Uvicorn metrics) and click **Load**.
+3. Select your Prometheus Data Source from the dropdown.
+4. Click **Import**.
+5. You will see real-time charts displaying **RPS (Requests Per Second)**, **HTTP Latency Percentiles**, **HTTP Error Rates**, and **System Memory/GC stats**.
+
+---
+
+### 🇮🇳 Hinglish Summary
+Module 8 ke caching, profiling, load testing aur observability sections mein humne seekha ki APIs ki speed optimize karne ke liye Redis (RAM-based cache) ka use karte hain. Windows environment par client connection setup ke liye `protocol=2` set kiya jata hai.
+
+Code bottlenecks diagnosis ke liye hum **Profiling** use karte hain. Middleware ke through `time.time()` stopwatch lagakar basic response duration calculate ki jati hai. Deep diagnostics ke liye Python ka **cProfile** library enable karke pure code structure (function execution counts aur execution duration) ko analyze kiya jata hai aur stats binary `.prof` format mein save hote hain. In binary files ko read karne ke liye Python ki built-in **`pstats`** library se `tottime` (total function internal time) aur `cumtime` (cumulative nested execution time) sort karke display kiya jata hai. **Line Profiler** ka use karke hum function ke andar `@profile` decorator lagakar `kernprof` CLI ke through ek-ek line ka execution microseconds percentage check kar sakte hain, jisse slow lines (jaise database operations or CPU loops) directly detect ho jaati hain.
+
+Server capacity check karne ke liye hum **Locust** library se concurrent load testing karte hain. `HttpUser` class ka use karke virtual users generate kiye jate hain jo random intervals (`wait_time = between(1, 2)`) par requests bhejte hain. Locust dashboard (`localhost:8089`) par **RPS**, **Failures %**, aur **Percentiles** (Median, 95%ile, 99%ile) analyze karke server bottleneck find kiya jata hai. Agar `async def` endpoint ke andar synchronous `time.sleep` call kiya jaye, toh event loop freeze ho jata hai, jisse system performance drop ho jati hai aur failures 100% tak chale jate hain.
+
+Production systems mein telemetry and tracking ke liye **Prometheus** metrics export kiye jate hain. FastAPI mein `Instrumentator().instrument(app).expose(app)` line se `/metrics` endpoint add kiya jata hai, jisse dynamic HTTP traffic counts, response latency histograms aur GC collections raw text format mein Prometheus scraper ke liye exposed rehte hain. Raw metrics readable nahi hote, isliye **Grafana** (`http://localhost:3000`) server add karke hum data source `http://prometheus:9090` configure karte hain aur Dashboard ID `16110` import karke beautiful live charts metrics render karte hain.
+
+
 
 
 

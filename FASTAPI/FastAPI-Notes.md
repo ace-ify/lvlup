@@ -1693,9 +1693,62 @@ While `cProfile` identifies slow functions, `line-profiler` highlights the exact
 
 ---
 
+## 3. Load Testing with Locust
+
+Load testing is the process of simulating concurrent user traffic (load) to evaluate system behavior, throughput, response times, and failure thresholds.
+
+### 🦗 Locust Core Concepts
+Locust allows writing load-test scenarios in pure Python. It spins up a web interface on port `8089` to manage virtual users and view real-time performance charts.
+
+```python
+import json
+from locust import HttpUser, task, between
+
+class APIUser(HttpUser):
+    # Simulates user pacing (waits 1 to 2 seconds between tasks)
+    wait_time = between(1, 2)
+
+    @task
+    def call_predict(self):
+        payload = {'feature1': 1.0, 'feature2': 2.0}
+        headers = {'Content-Type': 'application/json'}
+        self.client.post('/predict', data=json.dumps(payload), headers=headers)
+
+    @task(1)  # Optional task weight
+    def call_root(self):
+        self.client.get('/')
+```
+
+### ⚡ Key Metrics Checked on the Dashboard
+*   **RPS (Requests Per Second):** Number of requests successfully processed by the server every second.
+*   **Failures %:** The percentage of requests that failed (e.g. 500 errors, network drops, timeouts).
+*   **Percentiles (Median / 95%ile / 99%ile):**
+    *   **Median (50%ile):** 50% of users received responses faster than this time.
+    *   **95%ile:** 95% of users received responses faster than this time. Represents typical user experience under load.
+    *   **99%ile:** 99% of users received responses faster than this time. Shows worst-case (tail) latency.
+
+---
+
+### 💥 Server Breakdown & Overloading Scenarios
+
+There are two primary ways a server breaks down under load:
+
+1.  **Threadpool Saturation (High Concurrency):** When thousands of virtual users send concurrent requests, the server thread pool (handling sync tasks) runs out of worker threads. Incoming requests pile up in the OS socket backlog queue, resulting in **Connection Refused** or **Timeout** errors (causing a **100% Failure Rate**).
+2.  **Asynchronous Thread Freeze (Event Loop Blocking):** If an endpoint is marked `async def` but calls a synchronous blocking method like `time.sleep(2)`, the single-threaded event loop locks up completely. The server becomes unresponsive, and all incoming requests from other virtual users immediately time out.
+
+#### 🔧 Solutions to Handle High Load:
+*   Use async non-blocking operations (`await asyncio.sleep()`).
+*   Configure Gunicorn/Uvicorn multi-worker mode (`--workers 4`).
+*   Implement caching strategies (e.g., Redis) to bypass DB or model prediction overhead entirely.
+
+---
+
 ### 🇮🇳 Hinglish Summary
-Module 8 ke caching aur profiling sections mein humne seekha ki APIs ki speed optimize karne ke liye Redis (RAM-based cache) ka use karte hain. Windows environment par client connection setup ke liye `protocol=2` set kiya jata hai. 
+Module 8 ke caching, profiling aur load testing sections mein humne seekha ki APIs ki speed optimize karne ke liye Redis (RAM-based cache) ka use karte hain. Windows environment par client connection setup ke liye `protocol=2` set kiya jata hai. 
 
 Code bottlenecks diagnosis ke liye hum **Profiling** use karte hain. Middleware ke through `time.time()` stopwatch lagakar basic response duration calculate ki jati hai. Deep diagnostics ke liye Python ka **cProfile** library enable karke pure code structure (function execution counts aur execution duration) ko analyze kiya jata hai aur stats binary `.prof` format mein save hote hain. In binary files ko read karne ke liye Python ki built-in **`pstats`** library se `tottime` (total function internal time) aur `cumtime` (cumulative nested execution time) sort karke display kiya jata hai. **Line Profiler** ka use karke hum function ke andar `@profile` decorator lagakar `kernprof` CLI ke through ek-ek line ka execution microseconds percentage check kar sakte hain, jisse slow lines (jaise database operations or CPU loops) directly detect ho jaati hain.
+
+Server capacity check karne ke liye hum **Locust** library se concurrent load testing karte hain. `HttpUser` class ka use karke virtual users generate kiye jate hain jo random intervals (`wait_time = between(1, 2)`) par requests bhejte hain. Locust dashboard (`localhost:8089`) par **RPS**, **Failures %**, aur **Percentiles** (Median, 95%ile, 99%ile) analyze karke server bottleneck find kiya jata hai. Agar `async def` endpoint ke andar synchronous `time.sleep` call kiya jaye, toh event loop freeze ho jata hai, jisse system performance drop ho jati hai aur failures 100% tak chale jate hain.
+
 
 

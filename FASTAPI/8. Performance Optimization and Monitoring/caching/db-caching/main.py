@@ -6,8 +6,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 app = FastAPI()
-redis_client = redis.Redis(host='localhost', port=6379, db=0, protocol=2)
-
+redis_client=redis.Redis(host="localhost",port=6379,db=0,protocol=2)
 
 # establish database connection
 def get_db_connection():
@@ -84,3 +83,10 @@ def get_user(query: UserQuery):
     print(f"[{fetched_time}] Fetched from DB and Cached!")
 
     return result
+
+@app.post('/clear-cache')
+def clear_cache(query:UserQuery):
+    cache_key =make_cache_key(query.user_id)
+    redis_client.delete(cache_key)
+    return {'message': f'Cache cleared successfully for user {query.user_id}.'}
+    

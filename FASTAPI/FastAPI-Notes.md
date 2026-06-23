@@ -2044,7 +2044,43 @@ Server capacity check karne ke liye hum **Locust** library se concurrent load te
 
 Production systems mein telemetry and tracking ke liye **Prometheus** metrics export kiye jate hain. FastAPI mein `Instrumentator().instrument(app).expose(app)` line se `/metrics` endpoint add kiya jata hai, jisse dynamic HTTP traffic counts, response latency histograms aur GC collections raw text format mein Prometheus scraper ke liye exposed rehte hain. Raw metrics readable nahi hote, isliye **Grafana** (`http://localhost:3000`) server add karke hum data source `http://prometheus:9090` configure karte hain aur Dashboard ID `16110` import karke beautiful live charts metrics render karte hain.
 
+---
 
+### 🌊 API Data Flow / Data Pipeline (FastAPI Architecture)
+FastAPI mein data client se database tak kaise behta hai (Data flow), iska standard pattern samajhna bahut zaroori hai. Is pipepline mein Pydantic aur SQLAlchemy dono ka alag role hota hai.
 
+Ek example se samajhte hain: **User Signup Data Flow**
 
+#### 1. Client (Browser / Postman) se Request Aati Hai
+Client JSON format mein data bhejta hai:
+```json
+{
+  "username": "rahul123",
+  "password": "supersecretpassword"
+}
+```
 
+#### 2. Pydantic Schemas (The Security Guard / Validation Layer)
+*   **Role**: API (Internet) aur hamare Code ke beech ki deewar.
+*   Data sabse pehle FastAPI route (`@app.post()`) par aata hai aur `schemas.UserCreate` isko intercept karta hai.
+*   Pydantic check karta hai: "Kya `username` aur `password` aayi? Kya dono string hain?" Agar haan, toh is JSON ko ek Python Object (`user`) mein convert kar deta hai jisme data safely store hota hai.
+
+#### 3. FastAPI Route (The Controller)
+*   Yahan hum business logic lagate hain.
+*   `user.password` ko extract karke `security.get_password_hash()` se encrypt/hash kiya jata hai taaki safety maintain rahe.
+
+#### 4. SQLAlchemy Models (The Database Connector)
+*   **Role**: Hamare Python code aur Database (SQL) ke beech ka translator.
+*   Ab hum ek naya object banate hain: `new_user = models.User(username=user.username, hashed_password=hashed_pwd)`.
+*   Dhyan dein: `schemas.User` internet se baat karta tha, lekin `models.User` seedha Database Table se baat karta hai.
+
+#### 5. Database Commit (Final Storage)
+*   `db.add(new_user)` aur `db.commit()` ki madad se yeh safely database table mein insert ho jata hai aur isko ek unique `id` mil jati hai.
+
+#### 6. Pydantic Response Schema (The Output Filter)
+*   Signup complete hone ke baad hume client ko response bhejna hota hai. 
+*   Hum `return new_user` (Database object) wapas bhejte hain, lekin hamare route par `@app.post(..., response_model=schemas.UserResponse)` laga hota hai.
+*   Pydantic dobara activate hota hai aur output ko filter karta hai. Wo dekhta hai ki `UserResponse` mein sirf `id` aur `username` bhejna allowed hai, isliye wo `password` ko remove karke clean JSON frontend ko bhej deta hai!
+
+**Summary Pipeline:**
+`Client (JSON) -> Pydantic Schema (Validate) -> Hash Password -> SQLAlchemy Model (Convert to DB format) -> SQLite (Save) -> Pydantic Schema (Filter Output) -> Client (Clean JSON)`

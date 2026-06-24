@@ -124,22 +124,29 @@ def login_for_access_token(
 @app.post("/predict", response_model=schemas.PredictionResponse)
 def predict_car_price(
     features: schemas.CarFeatures, 
-    current_user: models.User = Depends(check_rate_limit) # Guard lag gaya!
+    current_user: models.User = Depends(check_rate_limit), # Guard lag gaya!
+    db: Session = Depends(get_db) # Naya: Database dependency add ki
 ):
     cache_key = f"predict:{features.year}:{features.mileage}:{features.engine_size}"
+    
     if redis_client:
         cached_result = redis_client.get(cache_key)
         if cached_result:
-            # Agar rate pehle se save hai, toh direct wapas de do!
             print("🚀 Serving from FAST Redis Cache!")
-            return json.loads(cached_result)
+            result = json.loads(cached_result)
+            
+            # Cache hit par bhi log save karna zaroori hai audit ke liye
+            log_entry = models.PredictionLog(
+                username=current_user.username,
+                features_hash=cache_key,
+                prediction_result=result["prediction"]
+            )
+            db.add(log_entry)
+            db.commit()
+            
+            return result
 
-    
-    # Abhi ke liye hum ek Mock (nakli) ML model bana rahe hain
-    # (Asli model hum baad mein 'joblib' se load karenge)
     print("⏳ Calculating using ML Model...")
-
-    # Example logic: Year purani hai toh price kam, mileage jyada toh price kam
     base_price = 50000
     age_penalty = (2025 - features.year) * 1000
     mileage_penalty = features.mileage * 0.1
@@ -147,7 +154,6 @@ def predict_car_price(
     
     final_prediction = base_price - age_penalty - mileage_penalty + engine_bonus
     
-    # Negative price se bachne ke liye
     if final_prediction < 1000:
         final_prediction = 1000
         
@@ -158,4 +164,14 @@ def predict_car_price(
 
     if redis_client:
         redis_client.setex(cache_key, 3600, json.dumps(result))
+        
+    # Naya: Prediction ko database mein save karo (Cache Miss hone par)
+    log_entry = models.PredictionLog(
+        username=current_user.username,
+        features_hash=cache_key,
+        prediction_result=result["prediction"]
+    )
+    db.add(log_entry)
+    db.commit()
+
     return result

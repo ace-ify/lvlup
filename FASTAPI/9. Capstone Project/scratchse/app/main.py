@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from app.db.database import engine
 from app.db import models
 
@@ -10,6 +12,9 @@ from app.middleware.logging_middleware import LoggingMiddleware
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ML Prediction API (Modular)", version="2.0")
+
+# Setup Prometheus Monitoring
+Instrumentator().instrument(app).expose(app)
 
 # Add Middlewares
 app.add_middleware(LoggingMiddleware)

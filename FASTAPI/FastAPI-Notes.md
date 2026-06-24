@@ -2084,3 +2084,41 @@ Client JSON format mein data bhejta hai:
 
 **Summary Pipeline:**
 `Client (JSON) -> Pydantic Schema (Validate) -> Hash Password -> SQLAlchemy Model (Convert to DB format) -> SQLite (Save) -> Pydantic Schema (Filter Output) -> Client (Clean JSON)`
+
+---
+
+# Module 9: Capstone Project — End-to-End Enterprise Architecture
+
+In this final module, we tie together all concepts (API, Auth, Cache, Database, Observability) into a single Production-Ready Capstone Project. We built a **Car Price Prediction API** with the following enterprise-grade pipeline:
+
+## 1. Enterprise Modular Architecture (Refactoring)
+Instead of a single monolithic `main.py`, the project is structured to scale:
+*   **`app/api/`**: Contains `routes_auth.py` (Signup/Login) and `routes_predict.py` (Prediction endpoints) using `APIRouter`.
+*   **`app/core/`**: Contains `dependencies.py` (Rate Limiting, Auth guards, DB sessions).
+*   **`app/cache/`**: Contains `redis_cache.py` to establish the Redis connection safely.
+*   **`app/services/`**: Contains `model_service.py` with the actual ML calculation logic (Base price, age penalty, mileage penalty).
+*   **`app/middleware/`**: Contains `logging_middleware.py` which intercepts every request and logs the execution time (e.g., `[POST] /predict - Took 0.05 secs`).
+
+## 2. Advanced Redis Implementations
+### Caching ML Predictions
+We generate a unique `cache_key` based on user inputs (e.g., `predict:2020:15000:1.5`). Before running the heavy ML model, the API checks Redis. If the key exists, it returns the cached result ("Serving from FAST Redis Cache!"), saving compute resources.
+
+### Sliding Window Rate Limiting
+To prevent abuse, we implemented a sliding window algorithm using Redis `ZSET` (Sorted Sets):
+*   We use the timestamp as the score.
+*   We remove all requests older than 60 seconds (`zremrangebyscore`).
+*   We count the remaining requests (`zcard`). If > 5, we raise a 429 Too Many Requests HTTP Exception.
+*   Otherwise, we add the current request timestamp (`zadd`).
+
+## 3. Database Logging Strategy
+Every prediction request, whether served from the fast Redis cache or freshly calculated by the ML model, is securely logged to the SQLite database `test.db` via the `PredictionLog` model. We store `username`, `features_hash` (the cache key), and `prediction_result` to maintain an audit trail for future model retraining and analytics.
+
+## 4. Containerization & Observability (Docker)
+The final step was containerizing the application using **Docker** and **Docker Compose** so it can run reliably anywhere without manual setup.
+*   **`Dockerfile`**: Packages the FastAPI app, installs `requirements.txt`, and sets up Uvicorn.
+*   **`docker-compose.yml`**: Orchestrates 4 microservices simultaneously:
+    1. `api`: The FastAPI application.
+    2. `redis`: Alpine Redis image for caching and rate limiting.
+    3. `prometheus`: Scrapes API metrics.
+    4. `grafana`: Visualizes the Prometheus metrics via beautiful dashboards.
+*   **`prometheus-fastapi-instrumentator`**: We attached this to `main.py` to automatically expose a `/metrics` route containing hardware and traffic telemetry for Prometheus to consume.

@@ -2,14 +2,34 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.database import engine, Base, SessionLocal
 from app.db import models
+from jose import jwt, JWTError
 from app import schemas
 from app.core import security
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from app.core.config import settings
+import json
+import redis
+import time
+from fastapi import Request
+
 
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ML Prediction API", version="1.0")
+try:
+    redis_client = redis.Redis(
+        host=settings.redis_host, 
+        port=settings.redis_port, 
+        decode_responses=True,
+        protocol=2
+    )
+    redis_client.ping() # Connection test
+except redis.ConnectionError:
+    redis_client = None
+    print("Warning: Redis is not running. Caching is disabled.")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def get_db():
     db = SessionLocal()
@@ -17,6 +37,47 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[security.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    user=db.query(models.User).filter(models.User.username == username).first()
+    
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+def check_rate_limit(request: Request, current_user: models.User = Depends(get_current_user)):
+    if not redis_client:
+        return current_user
+        
+    MAX_REQUESTS = 5
+    WINDOW_SECONDS = 60
+    
+    key = f"rate_limit:{current_user.username}"
+    current_time = time.time()
+    
+    redis_client.zremrangebyscore(key, 0, current_time - WINDOW_SECONDS)
+    
+    request_count = redis_client.zcard(key)
+    
+    if request_count >= MAX_REQUESTS:
+        raise HTTPException(
+            status_code=429, # 429 = Too Many Requests
+            detail="Rate limit exceeded. Try again in a minute."
+        )
+        
+    redis_client.zadd(key, {str(current_time): current_time})
+    redis_client.expire(key, WINDOW_SECONDS)
+    
+    return current_user
+
 
 @app.get("/")
 def root():
@@ -58,3 +119,43 @@ def login_for_access_token(
     access_token = security.create_access_token(data={"sub": user.username})
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/predict", response_model=schemas.PredictionResponse)
+def predict_car_price(
+    features: schemas.CarFeatures, 
+    current_user: models.User = Depends(check_rate_limit) # Guard lag gaya!
+):
+    cache_key = f"predict:{features.year}:{features.mileage}:{features.engine_size}"
+    if redis_client:
+        cached_result = redis_client.get(cache_key)
+        if cached_result:
+            # Agar rate pehle se save hai, toh direct wapas de do!
+            print("🚀 Serving from FAST Redis Cache!")
+            return json.loads(cached_result)
+
+    
+    # Abhi ke liye hum ek Mock (nakli) ML model bana rahe hain
+    # (Asli model hum baad mein 'joblib' se load karenge)
+    print("⏳ Calculating using ML Model...")
+
+    # Example logic: Year purani hai toh price kam, mileage jyada toh price kam
+    base_price = 50000
+    age_penalty = (2025 - features.year) * 1000
+    mileage_penalty = features.mileage * 0.1
+    engine_bonus = features.engine_size * 5000
+    
+    final_prediction = base_price - age_penalty - mileage_penalty + engine_bonus
+    
+    # Negative price se bachne ke liye
+    if final_prediction < 1000:
+        final_prediction = 1000
+        
+    result = {
+        "prediction": round(final_prediction, 2),
+        "model_version": "v1.0 (Mock)"
+    }
+
+    if redis_client:
+        redis_client.setex(cache_key, 3600, json.dumps(result))
+    return result

@@ -29,6 +29,8 @@ class MetricResponse(BaseModel):
     total_input_tokens: int
     total_output_tokens: int
 
+MetricsResponse = MetricResponse
+
 class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None

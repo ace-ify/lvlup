@@ -10,6 +10,7 @@ import threading
 from datetime import datetime, date
 from decimal import Decimal
 import uuid
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +43,17 @@ class ResponseCache:
     def __init__(
         self, 
         redis_url: Optional[str] = None, 
-        use_redis: bool = False, 
+        use_redis: Optional[bool] = None, 
         ttl_seconds: int = 300,
         namespace: str = "chat",
         max_local_entries: int = 10000,
         compression_threshold_bytes: int = 4096  # Compress entries > 4KB for LLM workloads
     ):
+        settings = get_settings()
         self.ttl = ttl_seconds
-        self.use_redis = use_redis
-        self.redis_url = redis_url
+        self.use_redis = use_redis if use_redis is not None else settings.use_redis
+        self.redis_url = redis_url if redis_url is not None else settings.redis_url
+        self._allow_redis = self.use_redis and bool(self.redis_url)
         self.namespace = namespace.strip(":")
         self.compression_threshold = compression_threshold_bytes
         
@@ -89,7 +92,7 @@ class ResponseCache:
 
     def _check_reconnect(self) -> None:
         """Attempt to reconnect to Redis if the connection was previously lost, throttled to once per 60 seconds."""
-        if not self.use_redis and self.redis_url:
+        if self._allow_redis and not self.use_redis and self.redis_url:
             now = time.time()
             if now - self._last_reconnect_attempt > 60.0:
                 self._last_reconnect_attempt = now

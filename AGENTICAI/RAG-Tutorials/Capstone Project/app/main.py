@@ -1,18 +1,26 @@
-from fastapi import FastAPI, Request, HTTPException, status
-from fastapi.responses import JSONResponse
+import time
+import os
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-import time
-from typing import Dict, Any
+from langsmith import traceable
+from dotenv import load_dotenv
 
 from app.config import get_settings
-from app.models import ChatRequest, ChatResponse, HealthResponse, MetricResponse, ErrorResponse
+from app.models import (
+    ChatRequest, ChatResponse,
+    HealthResponse, MetricsResponse, ErrorResponse,
+)
 from app.security import SecurityPipeline
 from app.cache import ResponseCache
 from app.monitoring import get_logger, MetricsCollector, RequestTimer
-from app.agent import compiled_agent
+from app.agent import ProductionAgent
+
+load_dotenv()
 
 logger = get_logger("production-api")
 settings = get_settings()
@@ -23,24 +31,33 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_lim
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Initialize resources
-    logger.info(f"Starting application in environment: {settings.app_env}")
+    logger.info("Starting production API...", extra={"extra_data": {
+        "environment": settings.app_env,
+        "primary_model": settings.primary_model,
+        "tracing_enabled": settings.langchain_tracing_v2,
+    }})
     
-    # Initialize cache, security pipeline, and metrics collector
-    app.state.cache = ResponseCache(
-        redis_url=settings.redis_url,
-        use_redis=settings.use_redis,
-        ttl_seconds=settings.cache_ttl_seconds
-    )
-    app.state.security = SecurityPipeline()
-    app.state.metrics = MetricsCollector()
+    # Initialize components
+    security = SecurityPipeline()
+    cache = ResponseCache(ttl_seconds=settings.cache_ttl_seconds)
+    metrics = MetricsCollector()
+    agent = ProductionAgent()
+
+    logger.info("All components initialized. Ready to serve requests.")
     
-    yield
+    # Expose them to app state so endpoints can access them
+    app.state.security = security
+    app.state.cache = cache
+    app.state.metrics = metrics
+    app.state.agent = agent
+    
+    yield # App is running
     
     # Shutdown: Clean up resources
-    logger.info("Shutting down application...")
-    if hasattr(app.state, "cache") and app.state.cache.redis_client:
+    logger.info("Shutting down...", extra={"extra_data": metrics.summary})
+    if cache.redis_client:
         try:
-            app.state.cache.redis_client.close()
+            cache.redis_client.close()
         except Exception as e:
             logger.warning(f"Error closing Redis connection during shutdown: {e}")
 
@@ -49,40 +66,38 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(RateLimitExceeded)
-async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
-        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        content=ErrorResponse(
-            error="RateLimitExceeded",
-            detail=f"Rate limit exceeded: {exc.detail}"
-        ).model_dump()
+        status_code=429,
+        content={
+            "error": "RateLimitExceeded",
+            "detail": "Too many requests. Please slow down.",
+        }
     )
 
-@app.post("/chat", response_model=ChatResponse, responses={
-    400: {"model": ErrorResponse},
-    429: {"model": ErrorResponse},
-    500: {"model": ErrorResponse}
-})
+@app.post("/chat", response_model=ChatResponse)
 @limiter.limit(settings.rate_limit)
-async def chat_endpoint(request: ChatRequest, fastapi_req: Request):
+@traceable(name="chat_endpoint")
+async def chat(request: Request, body: ChatRequest):
     """
-    Production-ready Chat/RAG endpoint.
-    Orchestrates Rate Limiting, Security Sanitization, Semantic Caching,
-    LangGraph Agentic Brain with Fallback, Output Validation, and Telemetry.
+    Main chat endpoint.
+    Flow: Rate Limiting -> Security Sanitization -> Semantic Caching ->
+          LangGraph Agent (with Fallback) -> Output Validation -> Telemetry Logging.
     """
-    metrics: MetricsCollector = fastapi_req.app.state.metrics
-    cache: ResponseCache = fastapi_req.app.state.cache
-    security: SecurityPipeline = fastapi_req.app.state.security
+    metrics: MetricsCollector = request.app.state.metrics
+    cache: ResponseCache = request.app.state.cache
+    security: SecurityPipeline = request.app.state.security
+    agent: ProductionAgent = request.app.state.agent
 
     with RequestTimer() as timer:
         # Step 1: Security check input
-        is_allowed, cleaned_text, input_notes = security.check_input(request.message)
+        is_allowed, cleaned_text, input_notes = security.check_input(body.message)
         if not is_allowed:
             # Blocked prompt injection
-            metrics.record_request(latency_ms=timer.latency_ms, error=True)
+            metrics.record_request(latency_ms=timer.elapsed_ms, error=True)
             logger.warning(f"Request blocked by security check: {input_notes}")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail=f"Security check failed: {input_notes[0] if input_notes else 'Unsafe input'}"
             )
 
@@ -92,7 +107,7 @@ async def chat_endpoint(request: ChatRequest, fastapi_req: Request):
             # Cache hit!
             logger.info("Cache hit! Returning response immediately.")
             metrics.record_request(
-                latency_ms=timer.latency_ms,
+                latency_ms=timer.elapsed_ms,
                 input_tokens=0,
                 output_tokens=0,
                 error=False,
@@ -100,69 +115,72 @@ async def chat_endpoint(request: ChatRequest, fastapi_req: Request):
             )
             return ChatResponse(
                 response=cached_response,
-                thread_id=request.thread_id or "default",
+                thread_id=body.thread_id or "default",
                 model_used="cache",
                 cached=True,
-                processing_time_ms=timer.latency_ms
+                processing_time_ms=round(timer.elapsed_ms, 2)
             )
 
         # Step 3: Invoke the LangGraph agent
         try:
             logger.info("Cache miss. Invoking agent.")
-            result = compiled_agent.invoke({
-                "message": cleaned_text,
-                "errors": []
-            })
+            result = agent.invoke(cleaned_text)
             
             agent_response = result.get("response", "")
             model_used = result.get("model_used", "unknown")
             
             # Record if it is an error from models failing
-            has_error = (model_used == "none")
+            has_error = (model_used == "error_handler" or result.get("error") is not None)
             
         except Exception as e:
             logger.exception("Agent invocation failed completely.")
-            metrics.record_request(latency_ms=timer.latency_ms, error=True)
+            metrics.record_request(latency_ms=timer.elapsed_ms, error=True)
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=500,
                 detail="An internal server error occurred while processing your request."
             )
 
         # Step 4: Security check output (only if we didn't return technical difficulties apology)
-        cleaned_output = agent_response
+        validated_response = agent_response
         output_warnings = []
-        if model_used != "none":
-            cleaned_output, output_warnings = security.check_output(agent_response)
+        if model_used != "error_handler":
+            validated_response, output_warnings = security.check_output(agent_response)
             if output_warnings:
                 logger.warning(f"Security warnings in output: {output_warnings}")
 
         # Step 5: Save response to cache if it was successfully generated
-        # If we had a model failure (model_used == "none"), we do not cache the error message!
-        if model_used != "none":
-            cache.set(cleaned_text, cleaned_output)
+        # If we had a model failure (model_used == "error_handler"), we do not cache the error message!
+        if model_used != "error_handler":
+            cache.set(cleaned_text, validated_response)
 
         # Step 6: Record Metrics
         input_tokens = len(cleaned_text) // 4
-        output_tokens = len(cleaned_output) // 4
+        output_tokens = len(validated_response) // 4
         metrics.record_request(
-            latency_ms=timer.latency_ms,
+            latency_ms=timer.elapsed_ms,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             error=has_error,
             cache_hit=False
         )
 
+        logger.info("Request completed", extra={"extra_data": {
+            "thread_id": body.thread_id,
+            "model_used": model_used,
+            "latency_ms": round(timer.elapsed_ms, 2),
+        }})
+
         return ChatResponse(
-            response=cleaned_output,
-            thread_id=request.thread_id or "default",
+            response=validated_response,
+            thread_id=body.thread_id or "default",
             model_used=model_used,
             cached=False,
-            processing_time_ms=timer.latency_ms
+            processing_time_ms=round(timer.elapsed_ms, 2),
         )
 
 @app.get("/health", response_model=HealthResponse)
-async def health_endpoint(fastapi_req: Request):
-    cache: ResponseCache = fastapi_req.app.state.cache
+async def health_endpoint(request: Request):
+    cache: ResponseCache = request.app.state.cache
     
     # Check components
     cache_ok = True
@@ -187,7 +205,7 @@ async def health_endpoint(fastapi_req: Request):
         checks=checks
     )
 
-@app.get("/metrics", response_model=MetricResponse)
-async def metrics_endpoint(fastapi_req: Request):
-    metrics: MetricsCollector = fastapi_req.app.state.metrics
-    return MetricResponse(**metrics.get_metrics())
+@app.get("/metrics", response_model=MetricsResponse)
+async def metrics_endpoint(request: Request):
+    metrics: MetricsCollector = request.app.state.metrics
+    return MetricsResponse(**metrics.get_metrics())

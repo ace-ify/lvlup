@@ -87,11 +87,20 @@ class MetricsCollector:
                 "total_output_tokens": self._tokens_output,
             }
 
+    @property
+    def summary(self) -> dict:
+        """Alias for get_metrics() to align with telemetry shutdown logging."""
+        return self.get_metrics()
+
 class RequestTimer:
     """Context manager to measure request execution time."""
     def __enter__(self):
         self.start_time = time.perf_counter()
         return self
 
+    @property
+    def elapsed_ms(self) -> float:
+        return (time.perf_counter() - self.start_time) * 1000.0
+
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.latency_ms = (time.perf_counter() - self.start_time) * 1000.0
+        self.latency_ms = self.elapsed_ms

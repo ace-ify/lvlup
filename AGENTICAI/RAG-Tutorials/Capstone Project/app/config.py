@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 300
     max_retries: int = 3
     
+    # Redis Configuration
+    redis_url: str = "redis://localhost:6379/0"
+    use_redis: bool = True
+
+    
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

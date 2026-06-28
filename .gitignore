@@ -246,6 +246,7 @@ misc/*.pdf
 
 # --- Obsidian Vault Directories & System Files ---
 dsatfuk.md
+ai_gaps.md
 
 # Agent State, Run Logs, and NotebookLM Credentials
 todo.json

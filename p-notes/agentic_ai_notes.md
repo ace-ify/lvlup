@@ -423,310 +423,227 @@ graph = graph_builder.compile(checkpointer=memory)
 
 ## Section 3: Model Context Protocol (MCP) & FastMCP
 
-The Model Context Protocol (MCP) is an open standard that allows secure, two-way communication between LLM clients and data sources or custom tools.
+The Model Context Protocol (MCP) is an open standard designed by Anthropic that allows secure, standardized, two-way communication between LLM applications (Hosts/Clients) and data sources or tools (Servers).
+
+---
 
 ### Core Concepts
 
-*   **MCP (Model Context Protocol)**: MCP is a standardized way for AI models to connect securely and talk to external data sources, tools, and environments. It works like a universal USB port for AI, making it simple to plug in new capabilities without building custom integrations every time.
-    *   *Hinglish*: MCP ek open standard hai jo AI models ko files, databases, aur tools se connect karne ka kaam karta hai. Ye AI ke liye ek universal USB-C port ki tarah hai.
-*   **FastMCP**: FastMCP is a user-friendly Python framework that lets you build MCP servers with very little code. It takes care of the complicated background setup so you can focus on writing tools and sharing resources quickly.
-    *   *Hinglish*: FastMCP ek Python library hai jisse aap bohot jaldi aur aasaani se MCP servers bana sakte ho. Ye background ke complicated steps ko chhupa kar tools aur resources ko direct expose karne mein help karta hai.
-*   **Tools (model-controlled)**: Tools are actions or functions that the AI model can choose to run when it needs to do something, like query a database or search the web. The model decides if, when, and how to use them based on what the user is asking.
-    *   *Hinglish*: Tools wo functions hain jinhe AI model user ki query solve karne ke liye khud call karne ka decision leta hai. Isme system actions jaise databases query karna ya files edit karna aata hai.
-*   **Resources (app-controlled)**: Resources are read-only data sources, like logs or text files, that your application makes available to the AI model. Unlike tools, these are controlled by the application and serve as raw context that the model can inspect when needed.
-    *   *Hinglish*: Resources read-only files ya logs hote hain jo application direct AI model ko supply karta hai. Ye tools ki tarah interactive nahi hote, bas AI ko extra reference dene ke liye use hote hain.
-*   **Prompts (user-controlled)**: Prompts are pre-made templates or guidelines that users can load to help the AI model perform specific tasks effectively. They give the user control over the AI's behavior and personality without having to write prompts from scratch every time.
-    *   *Hinglish*: Prompts pre-made system instructions ya templates hain jinhe user select kar sakta hai. Isse users ko AI ki settings baar-baar likhne ki zaroorat nahi padti.
-*   **Stdio Transport**: Stdio is a simple transport layer that lets the client and the MCP server communicate by sending messages through standard input and output streams. It is the go-to choice for running servers locally on the same computer because it is fast and requires no networking setup.
-    *   *Hinglish*: Stdio transport local pipe sharing ke throught client aur server ke beech data bhejta hai. Ye locally chalti hai aur isme network connectivity ki koi zaroorat nahi padti.
-*   **SSE Transport**: SSE, or Server-Sent Events, is a transport layer that uses web standards to let MCP servers stream real-time updates over HTTP connections. This is perfect for cloud-based setups where the client and the server are on different machines and need to communicate over the web.
-    *   *Hinglish*: SSE transport HTTP ke throught cloud servers se data stream karne ke liye use hota hai. Agar aapka client aur server alag-alag machines par hain toh ye routing ka kaam karta hai.
-
-### 🧠 First Principles: How does stdio-based MCP communicate?
-
-At the lowest level, stdio-based Model Context Protocol (MCP) does not use complex networking, sockets, or HTTP. It uses **Standard Input (`sys.stdin`)** and **Standard Output (`sys.stdout`)** to pipe JSON strings back and forth between the host client (like Claude Desktop or an IDE) and the running server process.
-
-#### The JSON-RPC 2.0 Protocol
-Every message exchanged is a structured **JSON-RPC 2.0** message. There are three types of messages:
-1. **Request:** Client calls a server tool. Must contain a unique `id`.
-2. **Response:** Server returns tool outputs to the client. Matches the client's `id`.
-3. **Notification:** One-way message (e.g. initialization). Does *not* have an `id`.
-
-Here is a pure Python simulation of how the stdio loop reads a request packet, routes it to a tool, and writes the response packet back:
-
-```python
-import json
-import sys
-
-# Simulation of the low-level Stdio MCP server loop
-def mock_mcp_server_loop():
-    # 1. Simulate receiving a tool call request packet from sys.stdin
-    incoming_stdin_data = """{
-        "jsonrpc": "2.0",
-        "id": 42,
-        "method": "tools/call",
-        "params": {
-            "name": "get_db_record",
-            "arguments": {"id": 101}
-        }
-    }"""
-    
-    # Parse the incoming packet
-    request = json.loads(incoming_stdin_data)
-    request_id = request.get("id")
-    method = request.get("method")
-    params = request.get("params", {})
-    
-    # 2. Server-side tool execution routing
-    if method == "tools/call":
-        tool_name = params.get("name")
-        args = params.get("arguments", {})
-        
-        # Execute tool logic
-        if tool_name == "get_db_record":
-            record_id = args.get("id")
-            result_data = f"Database record data for ID {record_id}"
-            
-            # Format JSON-RPC 2.0 response packet
-            response = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": result_data}
-                    ]
-                }
-            }
-            
-            # Write response packet to stdout
-            print(json.dumps(response, indent=2))
-
-mock_mcp_server_loop()
-```
+*   **Model Context Protocol (MCP)**: An open standard that acts as a universal API connector for AI. It solves the fragmentation problem of LLM integrations by standardizing how tools, prompts, and resources are exposed.
+    *   *Hinglish*: MCP ek open standard protocol hai jo AI tools ke integration ko simple banata hai. Ye AI models ke liye ek universal "USB-C port" ki tarah hai.
+*   **MCP Host**: The main application running the AI model that controls the session and orchestrates tool execution (e.g., Claude Desktop, Cursor, local IDE).
+    *   *Hinglish*: Wo main application jo AI model ko run karta hai aur tools ki execution ko control karta hai.
+*   **MCP Client**: The component inside the Host that initiates the connection to the server, queries its capabilities, and invokes tools.
+    *   *Hinglish*: Host ke andar ka connector module jo server se link build karta hai aur requests bhejta hai.
+*   **MCP Server**: A lightweight service or subprocess that exposes specific Tools, Resources, and Prompts to the Client.
+    *   *Hinglish*: Wo external backend service jo tools aur databases ko API ke through model ke liye expose karti hai.
+*   **Tools (LLM-controlled)**: Executable functions or actions that the AI model can dynamically choose to call to interact with external environments.
+    *   *Hinglish*: Functions jinhe AI model task solve karne ke liye select aur execute karta hai (e.g. database search, file writing).
+*   **Resources (App-controlled)**: Read-only data sources (logs, files, database schemas) supplied as static context to the LLM.
+    *   *Hinglish*: Read-only background files ya schemas jo model reference ke liye inspect kar sakta hai.
+*   **Prompts (User-controlled)**: Predefined prompt templates exposed by the server that users can select to configure the agent's task layout.
+    *   *Hinglish*: Pehle se likhe hue system prompts ya templates jinhe user agents configure karne ke liye select karta hai.
 
 ---
 
-### Python Code Snippets: FastMCP Server
+### 🧠 First Principles: Stdio Communication & Handshake Lifecycle
 
-```python
-from fastmcp import FastMCP
+At the lowest level, local MCP servers communicate using **Standard Input (`sys.stdin`)** and **Standard Output (`sys.stdout`)** via **JSON-RPC 2.0** messages.
 
-mcp = FastMCP("Developer Assistant Server")
-
-@mcp.tool()
-def format_user_query(raw_text: str) -> str:
-    """Cleans and standardizes user text input."""
-    return raw_text.strip().capitalize()
-
-@mcp.resource("docs://getting-started")
-def get_start_docs() -> str:
-    """Provides read-only start guides to the model."""
-    return "Welcome to the Agentic System!\n1. Write clean Python code."
-
-if __name__ == "__main__":
-    mcp.run()
+```
++-----------------------------------------------------------------------------------+
+|                            MCP HANDSHAKE & RUNTIME LIFECYCLE                      |
++------------------------------------+----------------------------------------------+
+|             MCP Client             |                  MCP Server                  |
+|                                    |                                              |
+|  1. Send "initialize" Request  --->|                                              |
+|     (Protocol version, capabilities) |                                              |
+|                                    |<---  2. Return "initialize" Response         |
+|                                    |     (Server features, schemas)               |
+|  3. Send "initialized" Notification|                                              |
+|     (Ready to exchange messages)   |                                              |
+|  ================================== ACTIVE OPERATIONS ========================== |
+|  4. Query "tools/list" Request --->|                                              |
+|                                    |<---  5. Return tool names and Zod schemas    |
+|  6. Call "tools/call" Request  --->|                                              |
+|     (Executes Python/JS logic)     |<---  7. Return Tool Output payload           |
+|  ================================== SHUTDOWN HANDSHAKE ========================= |
+|  8. Send "shutdown" Request    --->|                                              |
+|                                    |<---  9. Return empty Response                |
+|  10. Send "exit" Notification  --->| (Process exits cleanly)                      |
++------------------------------------+----------------------------------------------+
 ```
 
-### Career & Industry Context
-As IDEs like Cursor and enterprise assistants adopt MCP, it is becoming a critical standard for building interoperable AI tools. Platform engineers who specialize in MCP can expose databases, APIs, and file systems to any supporting LLM, reducing integration engineering time from weeks to minutes.
+#### Low-Level JSON-RPC 2.0 Message Primitives
+1.  **Request (Requires `id`):** The client requests a tool run.
+    ```json
+    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "query_db", "arguments": {"id": 101}}}
+    ```
+2.  **Response (Matches `id`):** The server returns the tool output.
+    ```json
+    {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "Record details..."}]}}
+    ```
+3.  **Notification (No `id`):** One-way status update (e.g. `initialized`).
+    ```json
+    {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+    ```
 
 ---
 
-### 🔲 Whiteboard & Practical Mastery (Section 3)
+### 💻 FastMCP Python Server Implementation
 
-#### Whiteboard Questions
-1. Compare Tools, Resources, and Prompts under the MCP standard.
-2. What are the key differences between `stdio` and `SSE` transport layers in MCP?
-3. How does a client (like Cursor/Claude Code) discover what tools are available on an MCP server?
+`FastMCP` is a high-level wrapper around the Python MCP SDK that registers tools, resources, and prompts using decorators:
 
-<details>
-<summary>💡 Reveal Answers</summary>
-
-- **Tools/Resources/Prompts**: Tools are callable functions executed by the client under LLM command; Resources are read-only text schemas fetched as static context; Prompts are predefined input layouts loaded by the user.
-- **Stdio vs SSE**: `stdio` communicates via standard I/O pipes (stdin/stdout) of a running local subprocess; `SSE` streams JSON-RPC payloads over HTTP endpoints, allowing cloud server connectivity.
-- **Discovery**: The client initializes the connection and sends a `tools/list` JSON-RPC query. The MCP server returns a list of tools alongside their parameter definitions as JSON Schemas.
-</details>
-
-#### Coding Challenge
-Build a FastMCP server (`mcp_db_server.py`) that:
-- Exposes a tool `query_database(sql_query: str) -> str` that connects to a local SQLite database and returns the result.
-- Exposes a resource `docs://api-specification` returning your system's raw API schema.
-
-<details>
-<summary>🔑 Reveal Challenge Solution Code (mcp_db_server.py & test_mcp_client.py)</summary>
-
-##### SQLite FastMCP Server (`mcp_db_server.py`)
 ```python
-import os
-import sqlite3
-import json
 import sys
 from fastmcp import FastMCP
 
-# Ensure UTF-8 output encoding for Windows terminal runs
+# Force UTF-8 encoding on Windows to prevent terminal output issues
 sys.stdout.reconfigure(encoding='utf-8')
-sys.stderr.reconfigure(encoding='utf-8')
 
-# Initialize SQLite database with dummy data
-DB_PATH = "test.db"
+# 1. Initialize Server instance
+mcp = FastMCP("Database & API Specs Server")
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            role TEXT NOT NULL,
-            status TEXT NOT NULL
-        )
-    """)
-    # Populate database if empty
-    cursor.execute("SELECT COUNT(*) FROM users")
-    if cursor.fetchone()[0] == 0:
-        dummy_users = [
-            ("Mau", "Certified Chutiya", "Active"),
-            ("Sv", "Maha Gadhachar", "Active"),
-            ("Alice", "Azure MLOps Engineer", "Active"),
-            ("Bob", "Payments Tech Lead", "Inactive")
-        ]
-        cursor.executemany("INSERT INTO users (name, role, status) VALUES (?, ?, ?)", dummy_users)
-        conn.commit()
-    conn.close()
-
-init_db()
-
-# Create FastMCP server instance
-mcp = FastMCP("SQLite Database Server")
-
+# 2. Expose a dynamic, executable Tool
 @mcp.tool()
-def query_database(sql_query: str) -> str:
+def search_expense_records(user_id: int, category: str = "all") -> str:
     """
-    Executes a SQL read-only query on the local SQLite database and returns the results.
-    Available table:
-      - 'users' (columns: id INTEGER, name TEXT, role TEXT, status TEXT)
+    Search local transaction expenses. Available categories: food, travel, software.
     """
-    lower_query = sql_query.lower().strip()
-    forbidden_keywords = ["insert", "update", "delete", "drop", "alter", "create", "replace"]
-    if any(keyword in lower_query for keyword in forbidden_keywords):
-        return "Error: Only read-only queries (SELECT) are permitted on this database."
+    # Exposing mock database query execution
+    return f"Found 2 records under '{category}' for User {user_id}: Total $45.00"
 
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(sql_query)
-        columns = [description[0] for description in cursor.description]
-        rows = cursor.fetchall()
-        conn.close()
-
-        # Format output as a nice JSON list
-        results = [dict(zip(columns, row)) for row in rows]
-        return json.dumps(results, indent=2)
-    except Exception as e:
-        return f"Database Error: {str(e)}"
-
-@mcp.resource("docs://api-specification")
-def get_api_spec() -> str:
+# 3. Expose a read-only Resource
+@mcp.resource("docs://specifications")
+def get_api_specifications() -> str:
     """
-    Returns the database schema and system API specifications for referencing.
+    Provides API schemas and database structures to the model as static context.
     """
-    schema_info = {
-        "database": "SQLite (test.db)",
-        "tables": {
-            "users": {
-                "description": "Stores user profiles, roles, and statuses.",
-                "columns": {
-                    "id": "INTEGER (Primary Key, Autoincrement)",
-                    "name": "TEXT (User's full name)",
-                    "role": "TEXT (Designation / Tag)",
-                    "status": "TEXT (Active / Inactive)"
-                }
-            }
-        },
-        "mcp_tools": {
-            "query_database": {
-                "input": "sql_query (str)",
-                "output": "JSON formatted string of rows"
-            }
-        }
-    }
-    return json.dumps(schema_info, indent=2)
+    return "Database Schema: users(id, name, email); expenses(id, user_id, amount, category);"
+
+# 4. Expose a Prompt template
+@mcp.prompt()
+def analyze_expenses_prompt(user_id: int) -> str:
+    """Pre-loaded prompt template for expense inspection."""
+    return f"Review all expense records for User {user_id} and identify saving opportunities."
 
 if __name__ == "__main__":
+    # Runs the stdio listening loop (stdin/stdout)
     mcp.run()
 ```
 
-##### Stdio MCP Client Tester (`test_mcp_client.py`)
+---
+
+### ⚙️ Claude Desktop Server Configuration
+
+To connect your custom MCP server to **Claude Desktop**, you must register it in your local configuration file:
+* **Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "my-expense-server": {
+      "command": "python",
+      "args": [
+        "c:/ace/lvlup/projects/mcp_server.py"
+      ],
+      "env": {
+        "MY_ENV_API_KEY": "sk-12345"
+      }
+    }
+  }
+}
+```
+
+---
+
+### 🤖 Building a Custom MCP Client in LangGraph
+
+In production, you don't just connect MCP servers to Claude Desktop; you build **custom clients** that connect to multiple MCP servers, fetch their tools, and bind them into a LangGraph ReAct agent.
+
+Here is the complete implementation code for an async stdio client:
+
 ```python
 import asyncio
 import sys
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
 
-# Ensure UTF-8 output encoding for Windows terminal
+# Ensure UTF-8 output encoding for local streams
 sys.stdout.reconfigure(encoding='utf-8')
-sys.stderr.reconfigure(encoding='utf-8')
 
-async def run_client():
+async def run_mcp_agent():
+    # 1. Configure Server connection parameters
     server_params = StdioServerParameters(
-        command="c:/ace/lvlup/p1/Scripts/python.exe",
-        args=["c:/ace/lvlup/07-Drills/mcp_db_server.py"]
+        command="python",
+        args=["c:/ace/lvlup/projects/mcp_server.py"]
     )
 
-    print("Connecting to MCP Server via Stdio...")
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            print("Initializing session...")
+    # 2. Establish connection to Stdio streams
+    async with stdio_client(server_params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            # Execute protocol handshake
             await session.initialize()
+            print("✅ MCP Client initialized successfully.")
 
-            print("\n--- Listing Tools ---")
+            # 3. Dynamic Tool Discovery
             tools_response = await session.list_tools()
-            for t in tools_response.tools:
-                print(f"Tool Name: {t.name}")
-                print(f"Description: {t.description}")
+            langchain_tools = []
 
-            sql = "SELECT name, role, status FROM users WHERE status = 'Active'"
-            print(f"--- Calling tool 'query_database' with query: '{sql}' ---")
-            tool_result = await session.call_tool("query_database", arguments={"sql_query": sql})
-            
-            for content in tool_result.content:
-                if hasattr(content, 'text'):
-                    print("Output:\n", content.text)
+            for mcp_tool in tools_response.tools:
+                print(f"Discovered Tool: {mcp_tool.name}")
+                
+                # Wrap MCP tool as a LangChain-compatible tool
+                @tool(name=mcp_tool.name, description=mcp_tool.description)
+                def wrapped_tool(arguments: dict) -> str:
+                    # Execute synchronous helper running client task loop
+                    loop = asyncio.get_event_loop()
+                    result = loop.run_until_complete(
+                        session.call_tool(mcp_tool.name, arguments=arguments)
+                    )
+                    return "".join(c.text for c in result.content)
+                
+                langchain_tools.append(wrapped_tool)
 
-            print("\n--- Listing Resources ---")
-            resources_response = await session.list_resources()
-            for r in resources_response.resources:
-                print(f"Resource Name: {r.name}")
-                print(f"URI: {r.uri}")
+            # 4. Initialize LLM & Stateful Graph
+            model = ChatOpenAI(model="gpt-4o")
+            agent = create_react_agent(model, tools=langchain_tools)
 
-            resource_uri = "docs://api-specification"
-            print(f"--- Reading Resource: '{resource_uri}' ---")
-            resource_result = await session.read_resource(resource_uri)
-            for content in resource_result.contents:
-                print("Content:\n", content.text)
-
-if __name__ == "__main__":
-    asyncio.run(run_client())
-```
-</details>
-
-
-#### Warm-up Sandbox (mcp_sandbox.py)
-```python
-from fastmcp import FastMCP
-
-mcp = FastMCP("Basic MCP Server")
-
-@mcp.tool()
-def add_numbers(a: int, b: int) -> int:
-    """Adds two numbers together."""
-    return a + b
+            # Run query
+            inputs = {"messages": [("user", "Check saving options for User 402.")]}
+            result = await agent.ainvoke(inputs)
+            print("Response:", result["messages"][-1].content)
 
 if __name__ == "__main__":
-    mcp.run()
+    asyncio.run(run_mcp_agent())
 ```
 
 ---
+
+### 🛡️ Modern 2025/2026 MCP Advancements
+
+1.  **Distributed SSE Transport (Web-Scale MCP):**
+    *   Unlike stdio which is restricted to a single host machine, SSE (Server-Sent Events) transport runs over HTTP. 
+    *   **Architecture:** The client opens an event-source GET connection to stream server-sent JSON messages, and uses POST requests to send client-side JSON-RPC payloads back to the server. This allows cloud hosts to coordinate with remote database microservices globally.
+2.  **Smithery Registry:**
+    *   Smithery has emerged as the central registry (package manager) for MCP servers. Developers can discover, download, and configure containerized/local MCP servers (e.g. Postgres, SQLite, Manim, GitHub) using a unified CLI tool.
+3.  **Sandboxing & Quarantine:**
+    *   Production setups execute untrusted third-party MCP servers inside Docker containers or secure WASM/V8 sandboxes, protecting the parent system from malicious code execution or data extraction via tool injections.
+
+---
+
+### 🇮🇳 Hinglish Summary
+
+Bhaiya, MCP standard AI integrations ko replace kar raha hai. 
+1.  **Transport Layers:** Agar local app run kar rahe ho (jaise Claude Desktop/Cursor), toh standard input/output pipes ka use karke **Stdio transport** chalao. Agar server-to-server cloud connection chahiye, toh HTTP based **SSE transport** use hoga.
+2.  **Protocol Handshake:** Pehle Client `initialize` packet bhejta hai, server description schemas respond karta hai, fir dynamic `tools/list` fetch hone ke baad `tools/call` sequence start hoti hai.
+3.  **Custom Clients:** LangGraph/LangChain agents me MCP servers ko inject karne ke liye server processes connect karo, parameters extract karo, aur unhe native tools me wrap karke compile-react-agent method me pass karo.
+
+---
+
 
 ## Section 4: Retrieval-Augmented Generation (RAG)
 
@@ -5846,3 +5763,228 @@ builder.add_conditional_edges("agent", tools_condition)
 
 ---
 *🌌 [[Home MOC]] · [[Career MOC]]*
+## Section 3: Model Context Protocol (MCP) & FastMCP
+
+The Model Context Protocol (MCP) is an open standard designed by Anthropic that allows secure, standardized, two-way communication between LLM applications (Hosts/Clients) and data sources or tools (Servers).
+
+---
+
+### Core Concepts
+
+*   **Model Context Protocol (MCP)**: An open standard that acts as a universal API connector for AI. It solves the fragmentation problem of LLM integrations by standardizing how tools, prompts, and resources are exposed.
+    *   *Hinglish*: MCP ek open standard protocol hai jo AI tools ke integration ko simple banata hai. Ye AI models ke liye ek universal "USB-C port" ki tarah hai.
+*   **MCP Host**: The main application running the AI model that controls the session and orchestrates tool execution (e.g., Claude Desktop, Cursor, local IDE).
+    *   *Hinglish*: Wo main application jo AI model ko run karta hai aur tools ki execution ko control karta hai.
+*   **MCP Client**: The component inside the Host that initiates the connection to the server, queries its capabilities, and invokes tools.
+    *   *Hinglish*: Host ke andar ka connector module jo server se link build karta hai aur requests bhejta hai.
+*   **MCP Server**: A lightweight service or subprocess that exposes specific Tools, Resources, and Prompts to the Client.
+    *   *Hinglish*: Wo external backend service jo tools aur databases ko API ke through model ke liye expose karti hai.
+*   **Tools (LLM-controlled)**: Executable functions or actions that the AI model can dynamically choose to call to interact with external environments.
+    *   *Hinglish*: Functions jinhe AI model task solve karne ke liye select aur execute karta hai (e.g. database search, file writing).
+*   **Resources (App-controlled)**: Read-only data sources (logs, files, database schemas) supplied as static context to the LLM.
+    *   *Hinglish*: Read-only background files ya schemas jo model reference ke liye inspect kar sakta hai.
+*   **Prompts (User-controlled)**: Predefined prompt templates exposed by the server that users can select to configure the agent's task layout.
+    *   *Hinglish*: Pehle se likhe hue system prompts ya templates jinhe user agents configure karne ke liye select karta hai.
+
+---
+
+### 🧠 First Principles: Stdio Communication & Handshake Lifecycle
+
+At the lowest level, local MCP servers communicate using **Standard Input (`sys.stdin`)** and **Standard Output (`sys.stdout`)** via **JSON-RPC 2.0** messages.
+
+```
++-----------------------------------------------------------------------------------+
+|                            MCP HANDSHAKE & RUNTIME LIFECYCLE                      |
++------------------------------------+----------------------------------------------+
+|             MCP Client             |                  MCP Server                  |
+|                                    |                                              |
+|  1. Send "initialize" Request  --->|                                              |
+|     (Protocol version, capabilities) |                                              |
+|                                    |<---  2. Return "initialize" Response         |
+|                                    |     (Server features, schemas)               |
+|  3. Send "initialized" Notification|                                              |
+|     (Ready to exchange messages)   |                                              |
+|  ================================== ACTIVE OPERATIONS ========================== |
+|  4. Query "tools/list" Request --->|                                              |
+|                                    |<---  5. Return tool names and Zod schemas    |
+|  6. Call "tools/call" Request  --->|                                              |
+|     (Executes Python/JS logic)     |<---  7. Return Tool Output payload           |
+|  ================================== SHUTDOWN HANDSHAKE ========================= |
+|  8. Send "shutdown" Request    --->|                                              |
+|                                    |<---  9. Return empty Response                |
+|  10. Send "exit" Notification  --->| (Process exits cleanly)                      |
++------------------------------------+----------------------------------------------+
+```
+
+#### Low-Level JSON-RPC 2.0 Message Primitives
+1.  **Request (Requires `id`):** The client requests a tool run.
+    ```json
+    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "query_db", "arguments": {"id": 101}}}
+    ```
+2.  **Response (Matches `id`):** The server returns the tool output.
+    ```json
+    {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "Record details..."}]}}
+    ```
+3.  **Notification (No `id`):** One-way status update (e.g. `initialized`).
+    ```json
+    {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+    ```
+
+---
+
+### 💻 FastMCP Python Server Implementation
+
+`FastMCP` is a high-level wrapper around the Python MCP SDK that registers tools, resources, and prompts using decorators:
+
+```python
+import sys
+from fastmcp import FastMCP
+
+# Force UTF-8 encoding on Windows to prevent terminal output issues
+sys.stdout.reconfigure(encoding='utf-8')
+
+# 1. Initialize Server instance
+mcp = FastMCP("Database & API Specs Server")
+
+# 2. Expose a dynamic, executable Tool
+@mcp.tool()
+def search_expense_records(user_id: int, category: str = "all") -> str:
+    """
+    Search local transaction expenses. Available categories: food, travel, software.
+    """
+    # Exposing mock database query execution
+    return f"Found 2 records under '{category}' for User {user_id}: Total $45.00"
+
+# 3. Expose a read-only Resource
+@mcp.resource("docs://specifications")
+def get_api_specifications() -> str:
+    """
+    Provides API schemas and database structures to the model as static context.
+    """
+    return "Database Schema: users(id, name, email); expenses(id, user_id, amount, category);"
+
+# 4. Expose a Prompt template
+@mcp.prompt()
+def analyze_expenses_prompt(user_id: int) -> str:
+    """Pre-loaded prompt template for expense inspection."""
+    return f"Review all expense records for User {user_id} and identify saving opportunities."
+
+if __name__ == "__main__":
+    # Runs the stdio listening loop (stdin/stdout)
+    mcp.run()
+```
+
+---
+
+### ⚙️ Claude Desktop Server Configuration
+
+To connect your custom MCP server to **Claude Desktop**, you must register it in your local configuration file:
+* **Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "my-expense-server": {
+      "command": "python",
+      "args": [
+        "c:/ace/lvlup/projects/mcp_server.py"
+      ],
+      "env": {
+        "MY_ENV_API_KEY": "sk-12345"
+      }
+    }
+  }
+}
+```
+
+---
+
+### 🤖 Building a Custom MCP Client in LangGraph
+
+In production, you don't just connect MCP servers to Claude Desktop; you build **custom clients** that connect to multiple MCP servers, fetch their tools, and bind them into a LangGraph ReAct agent.
+
+Here is the complete implementation code for an async stdio client:
+
+```python
+import asyncio
+import sys
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+
+# Ensure UTF-8 output encoding for local streams
+sys.stdout.reconfigure(encoding='utf-8')
+
+async def run_mcp_agent():
+    # 1. Configure Server connection parameters
+    server_params = StdioServerParameters(
+        command="python",
+        args=["c:/ace/lvlup/projects/mcp_server.py"]
+    )
+
+    # 2. Establish connection to Stdio streams
+    async with stdio_client(server_params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            # Execute protocol handshake
+            await session.initialize()
+            print("✅ MCP Client initialized successfully.")
+
+            # 3. Dynamic Tool Discovery
+            tools_response = await session.list_tools()
+            langchain_tools = []
+
+            for mcp_tool in tools_response.tools:
+                print(f"Discovered Tool: {mcp_tool.name}")
+                
+                # Wrap MCP tool as a LangChain-compatible tool
+                @tool(name=mcp_tool.name, description=mcp_tool.description)
+                def wrapped_tool(arguments: dict) -> str:
+                    # Execute synchronous helper running client task loop
+                    loop = asyncio.get_event_loop()
+                    result = loop.run_until_complete(
+                        session.call_tool(mcp_tool.name, arguments=arguments)
+                    )
+                    return "".join(c.text for c in result.content)
+                
+                langchain_tools.append(wrapped_tool)
+
+            # 4. Initialize LLM & Stateful Graph
+            model = ChatOpenAI(model="gpt-4o")
+            agent = create_react_agent(model, tools=langchain_tools)
+
+            # Run query
+            inputs = {"messages": [("user", "Check saving options for User 402.")]}
+            result = await agent.ainvoke(inputs)
+            print("Response:", result["messages"][-1].content)
+
+if __name__ == "__main__":
+    asyncio.run(run_mcp_agent())
+```
+
+---
+
+### 🛡️ Modern 2025/2026 MCP Advancements
+
+1.  **Distributed SSE Transport (Web-Scale MCP):**
+    *   Unlike stdio which is restricted to a single host machine, SSE (Server-Sent Events) transport runs over HTTP. 
+    *   **Architecture:** The client opens an event-source GET connection to stream server-sent JSON messages, and uses POST requests to send client-side JSON-RPC payloads back to the server. This allows cloud hosts to coordinate with remote database microservices globally.
+2.  **Smithery Registry:**
+    *   Smithery has emerged as the central registry (package manager) for MCP servers. Developers can discover, download, and configure containerized/local MCP servers (e.g. Postgres, SQLite, Manim, GitHub) using a unified CLI tool.
+3.  **Sandboxing & Quarantine:**
+    *   Production setups execute untrusted third-party MCP servers inside Docker containers or secure WASM/V8 sandboxes, protecting the parent system from malicious code execution or data extraction via tool injections.
+
+---
+
+### 🇮🇳 Hinglish Summary
+
+Bhaiya, MCP standard AI integrations ko replace kar raha hai. 
+1.  **Transport Layers:** Agar local app run kar rahe ho (jaise Claude Desktop/Cursor), toh standard input/output pipes ka use karke **Stdio transport** chalao. Agar server-to-server cloud connection chahiye, toh HTTP based **SSE transport** use hoga.
+2.  **Protocol Handshake:** Pehle Client `initialize` packet bhejta hai, server description schemas respond karta hai, fir dynamic `tools/list` fetch hone ke baad `tools/call` sequence start hoti hai.
+3.  **Custom Clients:** LangGraph/LangChain agents me MCP servers ko inject karne ke liye server processes connect karo, parameters extract karo, aur unhe native tools me wrap karke compile-react-agent method me pass karo.
+
+---
+
+
+## Section 4: Retrieval-Augmented Generation (RAG)

@@ -5197,357 +5197,190 @@ print(doc_tree[target_chapter][target_section])
 
 ---
 
-## Section 6: Deep Agents
+## Section 6: Deep Agents & Context Engineering
 
-Deep Agents are autonomous entities equipped with advanced reasoning, long-term planning capabilities, and the power to orchestrate subagents.
+Deep Agents represents a massive evolutionary shift in AI engineering. While shallow and standard ReAct systems operate on a single observation loop, Deep Agents act as autonomous, stateful systems capable of long-horizon planning, file system manipulation, dynamic subagent orchestration, and localized cognitive skill activation. 
+
+---
 
 ### Core Concepts
 
-*   **Deep Agents**: Deep agents are advanced AI programs that don't just react to your inputs, but can think ahead, plan multi-step actions, and run tasks in the background. They are designed to operate independently over long periods of time to solve complex coding or research goals.
-    *   *Hinglish*: Deep Agents plan karke backgrounds mein recursive operations aur subtasks ko handle kar sakte hain. Ye direct simple answers dene ke bajaye plan build karke complex tools run karte hain.
-*   **Planning (write_todos)**: Planning is the process where an agent maps out all the required steps to complete a goal by creating and updating a structured list of tasks. This allows the AI to stay organized, keep track of what it has already done, and adjust its strategy if something goes wrong.
-    *   *Hinglish*: Planning mein agent task list banata hai, edit karta hai aur track karta hai. Isse AI loops mein stuck hone se bachta hai aur goal-oriented rehta hai.
-*   **File-based Context Offloading**: File-based context offloading is a technique where an agent writes large amounts of information to local files rather than keeping it all in its active memory. This prevents the agent from getting overwhelmed or confused by too much text during long tasks.
-    *   *Hinglish*: File-based Context Offloading extra search records aur intermediate data ko text files mein local memory par write karne ki capability hai. Isse agent's token limits consume nahi hoti.
-*   **Subagent Delegation**: Subagent delegation is when a main agent creates and assigns specific, isolated tasks to smaller helper agents that run in the background. By letting specialists handle different parts of a project, the main agent can manage larger goals without getting bogged down in minor details.
-    *   *Hinglish*: Subagent delegation main agent dwara small helper agents ko spawn karke complex tasks transfer karne ka procedure hai. Isse state variables main execution thread se separated rehte hain.
-*   **Self-Healing Loops**: Self-healing loops are error-handling systems where the agent automatically captures and analyzes its own execution errors (like code traceback errors or API failures) and uses that feedback to rewrite and retry the operation until it succeeds.
-    *   *Hinglish*: Agar code execute karte waqt error aaye, toh error stack trace ko read karke agent automatically code update karta hai aur dobara run karta hai jab tak code successful na ho jaye.
+*   **Deep Agents (Stateful Orchestrator)**: Autonomous AI entities built on top of stateful graphing engines (e.g., LangGraph) that execute long-running tasks by maintaining a structured plan, managing files, and delegating subtasks to child agents.
+    *   *Hinglish*: Ek advanced, multi-step AI system jo direct simple text answer dene ke bajaye systematic workflows aur background tasks ko handle karta hai.
+*   **Context Engineering**: The process of structuring and partitioning information (prompt guidelines, local files, databases, and skills) so that the LLM receives the most relevant inputs without overloading the context window.
+    *   *Hinglish*: Agent ke prompt and memory limits ko save karne ke liye instructions aur files ko optimize and load karne ki process.
+*   **Progressive Skill Disclosure**: A design pattern where specialized domain instructions (Skills) are kept in isolated files and only loaded dynamically when the planner matches them with the user's query, preventing context bloat.
+    *   *Hinglish*: Saare instructions system prompt me thunsne ke bajaye domain-specific skills (e.g. AWS or Docker guides) ko query ke basis par dynamic tareeqe se load karna.
+*   **Storage Backends**: Abstract layers that define where the agent's virtual filesystem (scratch space, file tools, and memory) physically stores data (RAM, Local Disk, or Database).
+    *   *Hinglish*: Wo database/disk layer jo agent ke virtual file system (jaise `/notes/todo.txt`) ko background database se bind karti hai.
+*   **Subagent Delegation**: The ability of a primary agent to spawn contextual child agents with isolated prompt states and specific tools, preventing token degradation in the main thread.
+    *   *Hinglish*: Main agent dwara specific task ke liye specialized helper agent (structured output schema ke sath) create aur call karna.
 
-### 🎥 Deep Agent Masterclass: Evolution, Memory, and Skills
+---
 
-#### 🧠 First-Principles Concept: Shallow vs. ReAct vs. Deep Agents
-1. **Shallow Agents:** Standard LLM request-response calls. The model determines tool-calls dynamically, but has no structured planning, no memory storage persistence, and struggles with complex multi-step problems due to context window limitations.
-2. **ReAct Agents (Reason + Act):** Observation-based loop systems. The LLM acts, receives feedback (observation), and reasons again. Still classified as shallow when they lack persistent memory and structured task planning (e.g. they search and act blindly, often falling into infinite loop patterns).
-3. **Deep Agents (Next-Gen):** Built on stateful orchestration engines (like LangGraph). Designed for long-running, recursive workflows (like Claude Code or OpenAI Deep Research). They integrate four critical design pillars:
-   * **Planning Tool:** The ability to decompose a query into a structured, trackable to-do list (task backlog) and update it continuously.
-   * **Sub-agents:** Spawning isolated child agents for specialized sub-tasks to protect the primary agent's context window.
-   * **System Prompt Guardrails:** Strict operational boundaries and instructions.
-   * **File System Backend:** A shared workspace (virtual drive) that acts as persistent storage for sharing context between agents.
+### 🧠 Architectural Blueprint: Shallow vs. ReAct vs. Deep Agents
 
-#### ⚙️ Context Engineering: Static Memory vs. Progressive Skills
-* **Global Memory (`agent.md`):** Represents the static project context (e.g., project architecture, coding standards). Always injected in the system prompt. It must remain minimal to save tokens and prevent context drift.
-* **Progressive Skill Disclosure:** "On-demand" domain skills (e.g., AWS deploy skill, data parsing skill). Rather than bloating the system prompt, skills are only loaded (progressive disclosure) when the planner decides they match the current task, and are unloaded immediately afterward. A skill consists of a defined directory with `skill.md`, `instruction.md`, and `examples.md`.
+To build production-grade agent networks, you must understand the operational limits of each architecture:
 
-#### ⚙️ Database and File Storage Backends
-Deep Agents abstract storage into three types of backend layers:
-* **State Backend:** Temporary storage inside the active LangGraph thread memory (RAM). Erased when the thread closes.
-* **File System Backend:** Persistent storage writing directly to the host machine's disk. Allows editing real files.
-* **Store Backend:** Persistent key-value / vector storage that persists and is shareable across multiple different conversation threads.
+```
++-------------------------------------------------------------------------------------------------+
+|                                     EVOLUTION OF AGENT LOGIC                                    |
++------------------------------------+--------------------------------+---------------------------+
+| 1. Shallow Agents                  | 2. ReAct Agents (Observation)  | 3. Deep Agents (Stateful) |
+|                                    |                                |                           |
+|       +--------------+             |        +--------------+        |     [PLANNING ENGINE]     |
+|       |  User Query  |             |  +---> |  User Query  |        |      (To-Do backlog)      |
+|       +------+-------+             |  |     +------+-------+        |             |             |
+|              v                     |  |            v                |             v             |
+|       +--------------+             |  |     +--------------+        |     [FILE WORKSPACE]      |
+|       |  Single LLM  |             |  |     |  LLM Thought |        |   (Offloads bulk data)    |
+|       |  Prediction  |             |  |     +------+-------+        |             |             |
+|       +------+-------+             |  |            v                |             v             |
+|              v                     |  |     +--------------+        |      [ACTIVE SUBAGENTS]   |
+|       +--------------+             |  +-----+  Tool Action |        |    (Context-quarantined)  |
+|       |  Raw Answer  |             |        +--------------+        |             |             |
+|       +--------------+             |                                |             v             |
+|                                    |                                |      [VERIFY STEPS]       |
+|                                    |                                |   (Assertions & Checks)   |
++------------------------------------+--------------------------------+---------------------------+
+```
 
-#### 💻 Low-Level Code Blueprint: LangChain & Deep Agents Setup
-Here is a collection of code blueprints demonstrating how to initialize a Deep Agent with file systems, create Tavily tools, and spawn structured sub-agents using LangChain and Pydantic:
+1.  **Shallow Agents (Direct Prompting):** Standard request-response wrapper. The LLM receives the prompt, selects tools, and answers. It breaks down entirely on tasks requiring more than 2-3 step sequences due to attention loss.
+2.  **ReAct Agents (Reason + Act Loops):** Iterative loop systems (Thought $\rightarrow$ Action $\rightarrow$ Observation). Although cyclic, standard ReAct agents lack a structured, self-updating task list. They rely entirely on chat history for state memory, making them prone to **infinite loop traps** and token limit crashes.
+3.  **Deep Agents (Autonomous Systems):** Built on stateful, cyclical workflows. Inspired by enterprise platforms like Claude Code, they wrap the LLM in a robust harness containing **Planning backlogs**, **Virtual file workspace**, **Dynamic sub-agents**, and **State assertions**.
 
-##### 1. Initializing a Deep Agent with Tools & Backends
+---
+
+### 💾 Deep Agent Storage Backends (Production Deep Dive)
+
+Deep Agents interact with a virtual filesystem (e.g., using paths like `/notes/todo.txt`). Under the hood, the **Backend** translates these file paths into physical storage. Choosing the right backend is critical for scaling in production:
+
+| Feature | StateBackend (Default) | FilesystemBackend | StoreBackend |
+| :--- | :--- | :--- | :--- |
+| **Physical Location** | In-Memory (RAM State) | Local Hard Disk | Central Database (Postgres/Redis) |
+| **Thread Sharing** | ❌ Isolated to a single Thread ID | ✅ Shared across local processes | ✅ Cross-thread and multi-user shared |
+| **Durable Restarts** | ❌ Lost when process exits | ✅ Persists on host machine | ✅ Persists in database cluster |
+| **Best Used For** | Ephemeral file processing (e.g., PDF uploads in chat) | Local Developer/CLI tools (e.g., Claude Code workspace edits) | Multi-tenant SaaS products (keeps files isolated per user ID) |
+
+#### 🛠️ Production Scoping & Multi-Tenancy Isolation
+In a SaaS environment, multiple users talk to the same agent. You **must** configure multi-tenancy namespaces to prevent cross-user data leakage. Here is how you initialize all three backends programmatically:
+
 ```python
-from deep_agents import create_deep_agent
-from deep_agents.backends.file_system import FileSystemBackend
-from langchain.chat_models import init_chat_model
+from langgraph.store.memory import InMemoryStore
 from langgraph.checkpoint.memory import MemorySaver
+from deepagents import create_deep_agent
+from deepagents.backends import StateBackend, FilesystemBackend, StoreBackend
 
-# 1. Initialize the Chat Model
-model = init_chat_model("gpt-4o", model_provider="openai")
+# --- 1. STATE BACKEND (Per-thread scratchpad) ---
+state_agent = create_deep_agent(
+    model="openai:gpt-4o",
+    backend=StateBackend(),
+    checkpointer=MemorySaver() # Tracks conversation turns
+)
 
-# 2. Define the File System Storage Backend
-fs_backend = FileSystemBackend(
-    root_dir="./projects", 
+# --- 2. FILESYSTEM BACKEND (Host Disk workspace) ---
+# virtual_mode=True confines agent operations safely under the specified root folder
+fs_agent = create_deep_agent(
+    model="openai:gpt-4o",
+    backend=FilesystemBackend(root_dir="./sandbox", virtual_mode=True),
     checkpointer=MemorySaver()
 )
 
-# 3. Create the Deep Agent (automatically injects planner and todo-list logic)
-agent = create_deep_agent(
-    model=model,
-    system_prompt="You are a principal engineer...",
-    tools=[web_search_tool],
-    backend=fs_backend,
-    memory="./projects/agent.md",  # Global static context
-    skills="/skills"               # Directory containing on-demand skills
+# --- 3. STORE BACKEND (Multi-tenant Database Storage) ---
+db_store = InMemoryStore() # Swap with PostgresStore() in production
+store_agent = create_deep_agent(
+    model="openai:gpt-4o",
+    backend=StoreBackend(
+        store=db_store,
+        # Scopes file queries to a specific user's namespace folder
+        namespace=lambda runtime: ("users", runtime.config["configurable"]["user_id"])
+    ),
+    store=db_store,
+    checkpointer=MemorySaver()
 )
 ```
 
-##### 2. Defining Tools (Tavily Search Wrapper)
-```python
-import os
-from tavily import TavilyClient
-from typing import Literal
+---
 
-tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+### ⚙️ Context Engineering: Rules & Progressive Skill Disclosure
 
-def web_search_tool(
-    query_str: str, 
-    max_results: int = 5, 
-    topic: Literal["general", "news"] = "general", 
-    include_raw_content: bool = False
-) -> dict:
-    """
-    Search the web for up-to-date information on a query.
-    """
-    return tavily_client.search(
-        query=query_str, 
-        max_results=max_results, 
-        topic=topic, 
-        include_raw_content=include_raw_content
-    )
-```
+Context engineering resolves the issue of token waste and context drift. Instead of providing the model with a giant system prompt containing all instructions, the agent relies on structured directories:
 
-##### 3. Spawning Sub-Agents with Structured JSON Output
+#### 1. The Core Agent Rulebook (`AGENTS.md`)
+We offload instructions from python code to a version-controlled markdown file (`AGENTS.md`).
+* **Seeding in StateBackend:** Because StateBackend cannot access the disk, you must inject (seed) the file data during the `invoke()` call:
+  ```python
+  # Initializing
+  agent = create_deep_agent(model="gpt-4o", memory=["/projects/AGENTS.md"])
+
+  # Invoking (Seeding the content dynamically)
+  result = agent.invoke({
+      "messages": [{"role": "user", "content": "Explain project rules."}],
+      "files": {"/projects/AGENTS.md": {"content": "# Rulebook\nRule 1: Use TypeScript."}}
+  })
+  ```
+
+#### 2. Progressive Skill Disclosure
+Skills are isolated directories containing domain knowledge (e.g. `skills/aws/SKILL.md`).
+* When a user asks an AWS query, the agent's planner matches the query to the AWS skill, dynamically loads `/skills/aws/SKILL.md` into the context, executes the task, and unloads it. This keeps the active context window lean and optimal.
+
+---
+
+### 🤖 Subagents & Structured Output Delegations
+
+Complex tasks (e.g., researching AWS configurations and formatting a report) can fail if handled by a single agent due to conflicting system prompts.
+* **Solution:** The primary agent acts as an orchestrator, delegating sub-tasks to specialized subagents.
+* **Structured Output Enforcement:** We pass a Pydantic model into the subagent's `response_format` to guarantee that the delegated research returns strict JSON instead of long paragraphs.
+
 ```python
 from pydantic import BaseModel, Field
 
-# Define schema for structured findings
-class ResearchFindings(BaseModel):
-    summary: str = Field(description="Exhaustive summary of search findings")
-    confidence: float = Field(description="Confidence score from 0.0 to 1.0")
-    sources: list[str] = Field(description="List of reference URLs used")
+# 1. Define structured data schema
+class AWSReport(BaseModel):
+    architecture_summary: str = Field(description="Summary of proposed AWS resources")
+    estimated_cost: float = Field(description="Estimated monthly cost in USD")
+    security_checks: list[str] = Field(description="Required IAM security configurations")
 
-# Configure a specialized sub-agent
-research_sub_agent = {
-    "name": "Research Agent",
-    "description": "Used to research complex, multi-step queries.",
-    "system_prompt": "You are a research analyst. Gather facts and return structured summaries.",
-    "tools": [web_search_tool],
-    "response_format": ResearchFindings  # Enforces the Pydantic schema output
+# 2. Register structured subagent
+aws_subagent = {
+    "name": "aws-architect",
+    "description": "Designs cost-effective and secure AWS configurations.",
+    "system_prompt": "You are a senior AWS solutions architect.",
+    "tools": [aws_billing_tool],
+    "response_format": AWSReport # Forces output to match Pydantic schema
 }
 
-# Inject the sub-agent definition into the orchestrator
-agent = create_deep_agent(
-    model=model,
-    sub_agents=[research_sub_agent],
-    verbose=True
+# 3. Create primary orchestrator
+orchestrator = create_deep_agent(
+    model="openai:gpt-4o",
+    subagents=[aws_subagent]
 )
 ```
 
-#### 🇮🇳 Hinglish Summary
-Dosto, Deep Agents normal shallow ya ReAct agents se bohot advanced hote hain. Shallow agents direct answer generate karte hain, ReAct loops me tools call karte hain, par **Deep Agents (jaise Claude Code aur Deep Research)** systematic planning karte hain:
-1. **Planning & sub-agents:** Ye request ko to-do list me todte hain aur specialized sub-agents spawn karte hain jo un tasks ko context-isolated boundaries (quarantine) me solve karte hain.
-2. **Memory vs Skills:** Static rulebook ko `agent.md` me set kiya jata hai, aur customized expertise ko dynamically "Skills" folder se tabhi load kiya jata hai jab unki requirement ho.
-3. **Storage Backends:** Files ko RAM state me, local hard disk (File System Backend) me, ya database store (Store Backend) me persist karne ke clear abstractions provide karte hain, jisse complex agent workflows robust aur reliable ban jate hain.
+---
+
+### 🚀 Production Integration & Web Interface Best Practices
+
+When deploying Deep Agents as a web service (e.g., FastAPI, Streamlit, or Next.js), you must implement the following design optimizations:
+
+1.  **Cache Agent Instances:** Rebuilding the agent graph on every HTTP request is slow and expensive. Compile the agent once on server startup and store it in session state or a global registry.
+2.  **Turn-Message Extraction:** LangGraph returns the entire message history. In the UI, you should only display the new messages generated during the current turn. Locate the last `human` message and slice the list from that index forward:
+    ```python
+    all_msgs = result["messages"]
+    turn_start = max((i for i, m in enumerate(all_msgs) if getattr(m, "type", "") == "human"), default=0)
+    new_turn_logs = all_msgs[turn_start + 1:]
+    ```
+3.  **Recursion Limits:** Deep Agents execute complex task backlogs. Set `recursion_limit=100` (or higher) in the execution config to prevent early termination during recursive planning loops.
 
 ---
 
-### 🛡️ The AI Agent Harness (Engineering Beyond Prompts)
+### 🇮🇳 Hinglish Summary
 
-#### 🧠 First-Principles Concept
-Prompt engineering (tweaking system instructions) has a strict reliability ceiling. In production environments, 80% of agent failures (infinite loops, hallucinations, auth failures, context bloat) are **harness problems, not prompt problems**.
+Bhaiya, production me Deep Agents build karne ke liye simple prompt-tweaking kaafi nahi hai. Hume systematic **Context Engineering** karni padti hai:
+1.  **Backends Isolation:** Agar standard developer tool bana rahe ho, toh `FilesystemBackend` choose karo jo host machine ke real files edit kare. Agar SaaS platform bana rahe ho, toh `StoreBackend` use karo taaki user ID (`namespace`) ke according data isolated rahe aur ek user dusre ke files na dekh sake.
+2.  **Context Bloat Defense:** Saare rules model prompt me mat daalo. Main rules `AGENTS.md` me rakho, aur specialized knowledge ko `/skills/` folder me progressive disclosure ke liye set karo.
+3.  **Subagents and Validation:** Tasks ko break karke subagents ko do. Structured JSON schemas (Pydantic) pass karke outcomes validate karo taaki parsing errors prevent ho sakein.
 
-An **AI Agent Harness** is the programmatic infrastructure and logic that wraps around the LLM to control, ground, validate, and run it safely in a real-world environment. Surrounding an older, cheaper model (like GPT-3.5/Llama-3-8b) with a robust harness makes it significantly more reliable than a frontier model (like GPT-4o) running without constraints.
-
-```mermaid
-graph TD
-    UserQuery[User Query] --> Harness[Agent Harness Container]
-    subgraph Harness [Agent Harness Wrapper]
-        LoopCap{Iteration Cap < 10?} -- Yes --> LLM[LLM Engine]
-        LoopCap -- No --> Block[🚨 Timeout Block]
-        LLM -- Predicts Action --> VerifyStep{Verify action effect?}
-        VerifyStep -- Verification Passes --> ToolExec[Run Native Tool]
-        VerifyStep -- Verification Fails --> ErrorLog[Inject Error Context]
-        ErrorLog --> LLM
-    end
-    ToolExec --> Output[Response]
-```
-
-#### ⚙️ The Four Pillars of an Agent Harness
-1.  **Iteration/Loop Capping (Guardrails)**: Cap the total number of sequential model loops (e.g. limit to 10 iterations) to block infinite runaway loops, protecting API usage budgets.
-2.  **Verify Steps (State Assertion)**: When the agent reports that an action was completed successfully, the harness runs a programmatic check (e.g. checking if the database record actually exists or checking the browser DOM state) rather than taking the LLM's word for it.
-3.  **Auth Injection (Programmatic Login Handlers)**: Instead of teaching the model how to navigate authentication screens (filling credentials, solving CAPTCHAs), the harness intercepts the auth redirects and injects session cookies directly into the environment headers.
-4.  **Context Compaction & Memory Pruning**: Periodically summarizing the message history, removing redundant tool outputs, and keeping the active prompt focused only on current steps.
-5.  *Hinglish*: Harness basically AI model ke aas-paas ka program code hai jo use manage karta hai. Infinite loops aur hallucinations prompt change karne se nahi, balki loop limits, programmatic verify steps, aur session cookie injection se prevent hote hain.
-
-#### 💻 Low-Level Code Blueprint
-Here is a raw Python implementation demonstrating iteration capping, state verification, and context logging:
-
-```python
-class SimpleAgentHarness:
-    def __init__(self, max_iterations=5):
-        self.max_iterations = max_iterations
-        self.iterations = 0
-
-    def verify_action(self, action_name: str, args: dict) -> bool:
-        """Verify the physical result of an action (do not trust the LLM)."""
-        if action_name == "create_file":
-            import os
-            # Verify if file actually exists on the filesystem
-            filepath = args.get("filepath", "")
-            return os.path.exists(filepath)
-        return True
-
-    def run_agent_loop(self, agent_fn, state: list) -> str:
-        import os
-        
-        while self.iterations < self.max_iterations:
-            self.iterations += 1
-            print(f"\n[Harness] Starting Loop Iteration {self.iterations}/{self.max_iterations}...")
-
-            # 1. Model predicts thought and tool action
-            thought, action = agent_fn(state)
-            print(f"[Agent Thought]: {thought}")
-
-            if not action:
-                print("[Harness] Task finished successfully by Agent.")
-                return "SUCCESS"
-
-            action_name = action.get("name")
-            action_args = action.get("args", {})
-
-            # 2. Execute tool
-            print(f"[Harness] Executing tool: {action_name}...")
-            if action_name == "create_file":
-                with open(action_args["filepath"], "w") as f:
-                    f.write(action_args["content"])
-                execution_result = "File created"
-            else:
-                execution_result = "Unknown tool"
-
-            # 3. Verify tool action (Pillar 2: Verify Step)
-            verified = self.verify_action(action_name, action_args)
-            if not verified:
-                print(f"[Harness Warning] Verification failed for {action_name}!")
-                # Inject correction logs directly into the state
-                state.append({"role": "system", "content": f"Error: Tool {action_name} failed verification. File was not found."})
-            else:
-                print(f"[Harness] Verification passed.")
-                state.append({"role": "system", "content": f"Tool {action_name} succeeded: {execution_result}"})
-
-        print("\n[Harness Alert] Runaway loop capped! Iteration limits reached.")
-        return "TIMEOUT"
-
-# Mock Verification Demo
-if __name__ == "__main__":
-    import os
-    harness = SimpleAgentHarness(max_iterations=3)
-    
-    # Mock agent that attempts to create a file but lies or makes typos
-    def mock_agent(state):
-        if len(state) == 0:
-            return "I need to save server status logs.", {"name": "create_file", "args": {"filepath": "logs.txt", "content": "Status: OK"}}
-        return "I have saved the log, I am done.", None
-
-    state_history = []
-    harness.run_agent_loop(mock_agent, state_history)
-    # Clean up mock file
-    if os.path.exists("logs.txt"):
-        os.remove("logs.txt")
-```
-
----
-
-### 🧠 First Principles: How does Tool Calling / Function Calling work?
-
-A common misconception is that AI models "execute" tools. In reality, models are just text predictors that output structured JSON strings when tool calling is enabled. The actual execution is fully handled by the **Client Application**.
-
-#### The Tool Calling Dispatch Loop
-1. **Bind Tools:** The client sends a JSON schema representing the tool's signature to the LLM.
-2. **Model Call:** The LLM decides a tool is needed and outputs a specific token pattern matching the schema: `tool_calls: [{"name": "calculator", "args": {"a": 2, "b": 3}}]`.
-3. **Execution (Client-side):** The client parses the JSON, looks up the tool in a local dictionary, runs the native Python code, and captures the result.
-4. **Context Return:** The client formats the return value as a `ToolMessage` and feeds it back to the LLM's conversation history.
-
-Here is a pure Python implementation of a low-level tool registration and dispatch loop:
-
-```python
-import json
-
-# 1. Define native Python tools
-def calculate_pci_fee(amount: float) -> str:
-    # 1.5% processing fee + $0.30 flat rate
-    return f"${(amount * 0.015) + 0.30:.2f}"
-
-# 2. Tool Registry mapping schema name to actual function
-TOOL_REGISTRY = {
-    "calculate_pci_fee": calculate_pci_fee
-}
-
-# 3. Simulate receiving a tool call prediction from the LLM
-mock_llm_output_json = """{
-    "tool_calls": [
-        {
-            "name": "calculate_pci_fee",
-            "arguments": {
-                "amount": 250.00
-            }
-        }
-    ]
-}"""
-
-# 4. Client-side dispatching loop
-def dispatch_tools(llm_output_str: str):
-    parsed = json.loads(llm_output_str)
-    tool_calls = parsed.get("tool_calls", [])
-    
-    tool_results = []
-    for call in tool_calls:
-        name = call["name"]
-        args = call["arguments"]
-        
-        print(f"[Dispatch] Found tool call request: '{name}' with args {args}")
-        if name in TOOL_REGISTRY:
-            # Dynamically execute function matching registry
-            result = TOOL_REGISTRY[name](**args)
-            tool_results.append({
-                "role": "tool",
-                "name": name,
-                "content": result
-            })
-            print(f"[Dispatch] Execution Result: '{result}'")
-            
-    return tool_results
-
-results = dispatch_tools(mock_llm_output_json)
-# Output: [Dispatch] Execution Result: '$4.05'
-```
-
----
-
-### Local Learning Resources
-*   [basicsdeepagent.ipynb](file:///C:/ace/lvlup/AGENTICAI/basicsdeepagent.ipynb): Core architecture of deep agents, planning loops, and task queues.
-
-### Career & Industry Context
-As the AI field moves to autonomous digital workers, experience with deep agents is becoming a defining skill for senior AI developers. Tech teams utilize these patterns to construct self-healing software loops and autonomous research systems.
-
----
-
-### 🔲 Whiteboard & Practical Mastery (Section 6)
-
-#### Whiteboard Questions
-1. Draw the execution flow of a Deep Agent's Plan-Execute-Verify loop.
-2. What is "Context Offloading" and how does it prevent context window saturation?
-3. Why is Subagent Delegation critical when building high-reliability agent systems?
-4. How does a Self-Healing loop handle code execution exceptions dynamically?
-
-<details>
-<summary>💡 Reveal Answers</summary>
-
-- **Plan-Execute-Verify**: User prompt -> Plan Node (generates todo list) -> Execute Node (completes task 1) -> Verify Node (runs test/check) -> loops back to update todo list -> repeats -> terminates when empty.
-- **Context Offloading**: Large outputs, web dumps, or logs are written to local files. The agent keeps only references/summaries in its memory. When details are needed, it reads only the specific file, keeping the main context window small and clean.
-- **Subagent Delegation**: It encapsulates context. If one agent does too many things, prompt injection vectors increase and model attention degrades. Splitting tasks among specialist subagents prevents interference.
-- **Self-Healing Loop**: Runner Node executes code -> if exception raised: error traceback string is formatted -> sent back to LLM agent node as system context -> LLM diagnoses and modifies code -> Runner executes modified code -> repeats until pass.
-</details>
-
-#### Coding Challenge
-Write a Python script (`deep_researcher.py`) that:
-- Creates a `todo.json` file based on a user goal.
-- Loops through the tasks, performs dummy execution, logs updates to a separate progress log file, and completes the loop.
-
-#### Warm-up Sandbox (todo_sandbox.py)
-```python
-import json
-
-todo = {"tasks": [{"id": 1, "task": "Research FastAPI", "status": "pending"}]}
-
-with open("todo.json", "w") as f:
-    json.dump(todo, f)
-
-# Read and update
-with open("todo.json", "r") as f:
-    data = json.load(f)
-
-data["tasks"][0]["status"] = "completed"
-
-with open("todo.json", "w") as f:
-    json.dump(data, f)
-print("Tasks updated successfully!")
-```
-
----
 
 ## Section 7: LLM Guardrails
 

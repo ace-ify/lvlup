@@ -309,11 +309,11 @@ try:
     from sklearn.metrics import mean_squared_error, r2_score
     import numpy as np
 
-    np.random.seed(42)
+    np.random.seed(21)
     X_sk = np.random.uniform(0, 10, (100, 1))
     y_sk = 3.0 * X_sk.squeeze() + 7.0 + np.random.normal(0, 2.0, 100)
 
-    X_tr, X_te, y_tr, y_te = train_test_split(X_sk, y_sk, test_size=0.2, random_state=42)
+    X_tr, X_te, y_tr, y_te = train_test_split(X_sk, y_sk, test_size=0.2, random_state=21)
 
     lr = SklearnLR()
     lr.fit(X_tr, y_tr)

@@ -843,4 +843,566 @@ my_func()  # Output: Hello! (closure remembers msg)
 
 ---
 
+## 11. Data Analysis (The Exhaustive Bootcamp)
+*A comprehensive, encyclopedic guide covering everything from foundational methods to advanced production techniques across NumPy, Pandas, Matplotlib, and Seaborn.*
+
+---
+
+### Part 1: NumPy (Numerical Python)
+NumPy is the foundational library for scientific computing. It provides high-performance multidimensional array objects and tools for working with them.
+
+#### 1. Array Creation
+```python
+import numpy as np
+
+# Basic Arrays
+a = np.array([1, 2, 3])                # 1D array
+b = np.array([[1, 2], [3, 4]])         # 2D array (Matrix)
+
+# Built-in Initializers
+np.zeros((3, 4))                       # 3x4 matrix of zeros
+np.ones((2, 3, 4))                     # 3D array of ones
+np.full((2, 2), 99)                    # 2x2 matrix filled with 99
+np.eye(3)                              # 3x3 identity matrix
+np.empty((2, 2))                       # Uninitialized array (garbage values)
+
+# Sequences
+np.arange(0, 10, 2)                    # [0, 2, 4, 6, 8] (start, stop, step)
+np.linspace(0, 1, 5)                   # 5 evenly spaced numbers between 0 and 1
+
+# Random Data
+np.random.rand(3, 2)                   # Uniform distribution [0, 1)
+np.random.randn(3, 2)                  # Standard Normal distribution (mean 0, variance 1)
+np.random.randint(0, 10, (3, 3))       # Random integers from [0, 10) in a 3x3 matrix
+np.random.choice([1, 2, 3, 4], size=2) # Random sampling
+```
+
+#### 2. Array Inspection & Attributes
+```python
+arr = np.random.randint(0, 10, (3, 4))
+print(arr.shape)    # Tuple of array dimensions (3, 4)
+print(arr.ndim)     # Number of dimensions (2)
+print(arr.size)     # Total number of elements (12)
+print(arr.dtype)    # Data type of elements (e.g., int32, float64)
+print(arr.itemsize) # Size in bytes of each element
+```
+
+#### 3. Indexing, Slicing & Boolean Masking
+```python
+a = np.arange(10)
+# Basic Slicing [start:stop:step]
+print(a[2:5])       # [2, 3, 4]
+print(a[::-1])      # Reversed array
+
+# 2D Slicing [row, col]
+matrix = np.array([[1,2,3], [4,5,6], [7,8,9]])
+print(matrix[0, 1])     # Element at row 0, col 1 (returns 2)
+print(matrix[:, 1])     # All rows, column 1 (returns [2, 5, 8])
+print(matrix[0:2, 1:3]) # Subset of rows and cols
+
+# Boolean Masking (Filtering)
+mask = a > 5
+print(a[mask])          # Elements greater than 5: [6, 7, 8, 9]
+print(a[(a > 3) & (a < 8)]) # Multiple conditions (use & / | )
+
+# Fancy Indexing (passing an array of indices)
+print(a[[1, 3, 5]])     # Elements at index 1, 3, and 5
+```
+
+#### 4. Array Manipulation & Reshaping
+```python
+arr = np.arange(12)
+
+# Reshaping
+reshaped = arr.reshape((3, 4))         # Reshape to 3x4 (must have same total elements)
+arr.reshape((2, -1))                   # -1 automatically calculates the needed dimension (2x6)
+
+# Flattening
+flat = reshaped.flatten()              # Returns a copy
+raveled = reshaped.ravel()             # Returns a view (faster, but changes affect original)
+
+# Transposing
+matrix_t = reshaped.T                  # Transpose (rows become columns)
+
+# Combining Arrays
+a = np.array([1, 2])
+b = np.array([3, 4])
+np.concatenate((a, b))                 # [1, 2, 3, 4]
+np.vstack((a, b))                      # Vertical stack (2x2 matrix)
+np.hstack((a, b))                      # Horizontal stack (1x4 array)
+
+# Splitting
+np.split(arr, 3)                       # Splits into 3 equal arrays
+```
+
+#### 5. Math, Stats & Broadcasting
+```python
+arr = np.array([[1, 2], [3, 4]])
+
+# Basic Math (Element-wise)
+arr + 10           # Adds 10 to everything
+arr * 2            # Multiplies everything by 2
+arr * arr          # Element-wise multiplication
+np.dot(arr, arr)   # Matrix multiplication (or arr @ arr)
+
+# Statistics
+arr.sum()          # Total sum
+arr.sum(axis=0)    # Sum along columns (returns [4, 6])
+arr.sum(axis=1)    # Sum along rows (returns [3, 7])
+arr.mean()         # Mean
+arr.std()          # Standard deviation
+arr.var()          # Variance
+arr.min(), arr.max() # Min and Max
+
+# Finding indices
+arr.argmin()       # Index of minimum value
+arr.argmax()       # Index of maximum value
+
+# Cumulative operations
+arr.cumsum()       # Cumulative sum
+arr.cumprod()      # Cumulative product
+```
+
+---
+
+### Part 2: Pandas (Data Manipulation)
+Pandas provides high-performance data structures (`Series`, `DataFrame`) and data analysis tools.
+
+#### 1. Data Structures & Creation
+```python
+import pandas as pd
+
+# Series (1D array with labeled index)
+s = pd.Series([10, 20, 30], index=['a', 'b', 'c'])
+
+# DataFrame (2D tabular data)
+# From Dict of Lists
+df1 = pd.DataFrame({'Name': ['Alice', 'Bob'], 'Age': [25, 30]})
+# From List of Dicts
+df2 = pd.DataFrame([{'Name': 'Alice', 'Age': 25}, {'Name': 'Bob', 'Age': 30}])
+```
+
+#### 2. Reading & Writing Data
+```python
+# Reading
+df = pd.read_csv('data.csv')
+# df = pd.read_excel('data.xlsx', sheet_name='Sheet1')
+# df = pd.read_json('data.json')
+# df = pd.read_sql('SELECT * FROM table', connection)
+# df = pd.read_parquet('data.parquet')
+
+# Writing
+# df.to_csv('output.csv', index=False)
+# df.to_excel('output.xlsx', index=False)
+# df.to_parquet('output.parquet')
+```
+
+#### 3. Inspecting & Summarizing Data
+```python
+df.head(n=5)             # First 5 rows
+df.tail(n=5)             # Last 5 rows
+df.sample(n=3)           # Random 3 rows
+df.info()                # Index, Datatype and Memory info
+df.describe()            # Summary statistics for numerical columns
+df.describe(include='O') # Summary stats for categorical (object) columns
+df.shape                 # Tuple (rows, columns)
+df.columns               # Column names
+df.index                 # Row indices
+df.dtypes                # Data types of each column
+df.values                # Underlying NumPy array
+```
+
+#### 4. Selection, Indexing & Filtering
+```python
+# Column Selection
+df['Name']               # Returns a Series
+df[['Name', 'Age']]      # Returns a DataFrame
+
+# Row Selection by Label (loc)
+df.loc[0]                # Row with index label 0
+df.loc[0:5, ['Name']]    # Rows 0-5, Name column only
+
+# Row Selection by Position (iloc)
+df.iloc[0]               # 1st row
+df.iloc[0:5, 0:2]        # First 5 rows, first 2 columns
+
+# Boolean Filtering
+df[df['Age'] > 25]       # Basic filter
+df[(df['Age'] > 25) & (df['Name'] == 'Bob')] # Multiple conditions
+df[df['Name'].isin(['Bob', 'Alice'])]        # isin filter
+df[df['Age'].between(20, 30)]                # between filter
+df.query('Age > 25 and Name == "Bob"')       # SQL-like query string
+```
+
+#### 5. Data Cleaning & Handling Missing Values
+```python
+# Checking for nulls
+df.isnull()              # DataFrame of True/False
+df.isnull().sum()        # Count of nulls per column
+
+# Dropping missing values
+df.dropna()              # Drop any row with NaN
+df.dropna(axis=1)        # Drop any column with NaN
+df.dropna(subset=['Age'])# Drop row only if 'Age' is NaN
+
+# Filling missing values
+df.fillna(0)             # Fill with 0
+df.fillna(df['Age'].mean()) # Fill with mean
+df['Age'].ffill()        # Forward fill (propagate last valid observation forward)
+df['Age'].bfill()        # Backward fill
+
+# Duplicates
+df.duplicated().sum()    # Count exact duplicate rows
+df.drop_duplicates()     # Remove duplicate rows
+
+# Type casting & Replacing
+df['Age'] = df['Age'].astype(float)
+df['Status'].replace({'Active': 1, 'Inactive': 0}, inplace=True)
+```
+
+#### 6. String Operations (`.str`)
+```python
+df['Name'] = df['Name'].str.lower()
+df['Name'].str.upper()
+df['Name'].str.title()
+df['Name'].str.strip()             # Remove whitespace
+df['Name'].str.contains('Alice')   # Boolean series
+df['Name'].str.startswith('A')
+df['Name'].str.replace('old', 'new')
+df['Name'].str.split(' ', expand=True) # Split into multiple columns
+```
+
+#### 7. Datetime Operations (`.dt`)
+```python
+df['Date'] = pd.to_datetime(df['Date']) # Convert to datetime object
+
+df['Year'] = df['Date'].dt.year
+df['Month'] = df['Date'].dt.month
+df['Day'] = df['Date'].dt.day
+df['DayOfWeek'] = df['Date'].dt.day_name()
+
+# Time-series specific
+df.set_index('Date', inplace=True)
+# df.resample('ME').sum()  # Resample to Month-End and sum (requires DatetimeIndex)
+```
+
+#### 8. Data Manipulation (Apply, Map, Assign, Sort)
+```python
+# Map (Series only) - Map values using a dict or function
+df['Status_Code'] = df['Status'].map({'Active': 1, 'Inactive': 0})
+
+# Apply (Series or DataFrame) - Apply a function
+df['Age_Double'] = df['Age'].apply(lambda x: x * 2)
+df['Row_Sum'] = df[['Col1', 'Col2']].apply(np.sum, axis=1)
+
+# Assign (Create new columns, useful for chaining)
+df = df.assign(Age_Double=lambda x: x['Age'] * 2)
+
+# Rename & Drop
+df.rename(columns={'Name': 'Full_Name'}, inplace=True)
+df.drop(columns=['Status'], inplace=True)
+# df.drop(index=[0, 1])
+
+# Sorting
+df.sort_values(by='Age', ascending=False)
+df.sort_values(by=['Age', 'Name'], ascending=[False, True])
+df.sort_index(ascending=False)
+```
+
+#### 9. Grouping & Aggregation
+```python
+# Grouping by a single column
+grouped = df.groupby('Department')
+
+# Basic aggregation
+grouped['Salary'].mean()
+grouped.sum()
+
+# Multiple aggregations (.agg)
+df.groupby('Department').agg({
+    'Salary': ['mean', 'min', 'max'],
+    'Employee_ID': 'count'
+})
+
+# Transform (Returns data matching original index size)
+df['Dept_Avg_Salary'] = df.groupby('Department')['Salary'].transform('mean')
+
+# Pivot Tables & Crosstabs
+pd.pivot_table(df, values='Salary', index='Department', columns='Role', aggfunc='mean')
+pd.crosstab(df['Department'], df['Role']) # Frequency count
+```
+
+#### 10. Merging & Concatenation
+```python
+df1 = pd.DataFrame({'id': [1,2], 'name': ['A', 'B']})
+df2 = pd.DataFrame({'id': [1,3], 'age': [25, 30]})
+
+# Merge (SQL-like Joins)
+pd.merge(df1, df2, on='id', how='inner')  # intersection
+pd.merge(df1, df2, on='id', how='left')   # keep all from df1
+pd.merge(df1, df2, on='id', how='right')  # keep all from df2
+pd.merge(df1, df2, on='id', how='outer')  # union
+
+# Concat (Stacking vertically or horizontally)
+pd.concat([df1, df2], axis=0) # Vertically (append rows)
+pd.concat([df1, df2], axis=1) # Horizontally (append columns)
+```
+
+---
+
+### Part 3: Matplotlib (Visualization Foundation)
+Matplotlib is the core plotting engine. For production, **always** use the Object-Oriented (OOP) API over the `pyplot` functional API.
+
+#### 1. Figure & Axes Anatomy (OOP API)
+```python
+import matplotlib.pyplot as plt
+
+# Create a Figure (the canvas) and Axes (the plot)
+fig, ax = plt.subplots(figsize=(10, 6)) # 10x6 inches
+
+# For Multiple Plots
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(12, 8))
+# axes[0, 0].plot(...)
+# axes[0, 1].plot(...)
+```
+
+#### 2. Plot Types
+```python
+fig, ax = plt.subplots()
+x = [1, 2, 3, 4]
+y = [10, 20, 15, 25]
+
+ax.plot(x, y)                          # Line Plot
+ax.scatter(x, y, s=100, c='red')       # Scatter Plot (s=size, c=color)
+ax.bar(['A', 'B', 'C'], [10, 20, 15])  # Vertical Bar Chart
+ax.barh(['A', 'B', 'C'], [10, 20, 15]) # Horizontal Bar Chart
+ax.hist(np.random.randn(1000), bins=30)# Histogram
+ax.pie([10, 20, 30], labels=['X', 'Y', 'Z'], autopct='%1.1f%%') # Pie Chart
+ax.boxplot([[1,2,3], [3,4,5]])         # Boxplot
+```
+
+#### 3. Customization & Styling
+```python
+fig, ax = plt.subplots()
+ax.plot(x, y, color='#1f77b4', linestyle='--', linewidth=2, marker='o', label='Trend')
+
+# Labels and Titles
+ax.set_title("Main Title", fontsize=16, fontweight='bold')
+ax.set_xlabel("Time (Days)", fontsize=12)
+ax.set_ylabel("Growth (%)", fontsize=12)
+
+# Axis Limits and Ticks
+ax.set_xlim(0, 5)
+ax.set_ylim(0, 30)
+ax.set_xticks([1, 2, 3, 4, 5])
+ax.set_xticklabels(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], rotation=45)
+
+# Legends and Grids
+ax.legend(loc='upper left')
+ax.grid(True, linestyle=':', alpha=0.6)
+
+# Text & Annotations
+ax.text(2, 20, "Peak!", fontsize=12, color='red')
+ax.annotate('Notice this', xy=(3, 15), xytext=(4, 25),
+            arrowprops=dict(facecolor='black', shrink=0.05))
+
+# Spines (Borders)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Layout & Saving
+fig.tight_layout() # Prevents clipping of labels
+# fig.savefig('plot.png', dpi=300, bbox_inches='tight')
+```
+
+---
+
+### Part 4: Seaborn (Statistical Data Visualization)
+Seaborn is built on top of Matplotlib and makes styling and statistical plotting drastically easier.
+
+#### 1. Contexts, Styles, and Palettes
+Seaborn allows you to set global themes instantly.
+```python
+import seaborn as sns
+
+# Global Theme Setting
+sns.set_theme(style="whitegrid", context="talk", palette="husl")
+# Styles: "darkgrid", "whitegrid", "dark", "white", "ticks"
+# Contexts: "paper", "notebook", "talk", "poster" (scales fonts/lines automatically)
+```
+
+#### 2. Relational Plots (Continuous vs Continuous)
+```python
+# Scatterplot
+sns.scatterplot(data=df, x="total_bill", y="tip", hue="smoker", size="size", style="time")
+
+# Lineplot (Automatically calculates confidence intervals for multiple Ys per X)
+sns.lineplot(data=df, x="year", y="passengers", hue="month")
+
+# relplot (Figure-level, generates facets/grids)
+sns.relplot(data=df, x="total_bill", y="tip", col="time", hue="smoker", kind="scatter")
+```
+
+#### 3. Distribution Plots (Univariate Data)
+```python
+# Histogram & KDE (Kernel Density Estimate)
+sns.histplot(data=df, x="total_bill", kde=True, bins=20)
+sns.kdeplot(data=df, x="total_bill", fill=True, hue="time")
+sns.ecdfplot(data=df, x="total_bill") # Cumulative distribution
+```
+
+#### 4. Categorical Plots (Categorical vs Continuous)
+```python
+# Scatter styles
+sns.stripplot(data=df, x="day", y="total_bill", jitter=True)
+sns.swarmplot(data=df, x="day", y="total_bill") # Prevents overlap
+
+# Distribution styles
+sns.boxplot(data=df, x="day", y="total_bill", hue="smoker")
+sns.violinplot(data=df, x="day", y="total_bill", split=True, hue="smoker")
+
+# Estimate styles (Requires aggregation)
+sns.barplot(data=df, x="day", y="total_bill", estimator=np.mean, errorbar='ci') # Shows mean + Conf. Interval
+sns.countplot(data=df, x="day") # Like a histogram for categorical (frequency)
+sns.pointplot(data=df, x="day", y="total_bill")
+
+# catplot (Figure-level for faceting)
+sns.catplot(data=df, x="day", y="total_bill", col="time", kind="box")
+```
+
+#### 5. Regression & Matrix Plots
+```python
+# Regression
+sns.regplot(data=df, x="total_bill", y="tip", scatter_kws={'alpha':0.5})
+sns.lmplot(data=df, x="total_bill", y="tip", hue="smoker", col="time") # Figure-level regplot
+
+# Matrix (Heatmaps)
+# Needs data in matrix form (e.g., correlation matrix or pivot table)
+corr_matrix = df.select_dtypes(include='number').corr()
+sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5)
+
+# Clustermap (Hierarchical clustering)
+# sns.clustermap(corr_matrix, cmap="mako")
+```
+
+#### 6. Multi-Plot Grids (Figure-Level Functions)
+```python
+# Pairplot: Plots every numerical column against every other numerical column
+sns.pairplot(df, hue="species", diag_kind="kde")
+
+# Jointplot: Compares 2 variables and their distributions
+sns.jointplot(data=df, x="total_bill", y="tip", kind="hex") # kind="scatter", "kde", "hex", "reg"
+
+# FacetGrid: Manual grid building
+g = sns.FacetGrid(df, col="time", row="smoker")
+g.map(sns.scatterplot, "total_bill", "tip")
+```
+
+---
+
+### Part 5: Production-Level Data Engineering (The Pro Tier)
+*When working with millions of rows or building internal packages, simple scripts fail. Follow these rules.*
+
+#### 1. Pandas Memory Optimization (Downcasting)
+```python
+def optimize_memory(df):
+    """Iterates through columns, downcasting integers and floats to smallest possible types."""
+    start_mem = df.memory_usage().sum() / 1024**2
+    for col in df.columns:
+        col_type = df[col].dtype
+        if col_type != object:
+            c_min, c_max = df[col].min(), df[col].max()
+            if str(col_type)[:3] == 'int':
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+            else:
+                if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+        else:
+            # Check if object column should be categorical
+            num_unique_values = len(df[col].unique())
+            num_total_values = len(df[col])
+            if num_unique_values / num_total_values < 0.5:
+                df[col] = df[col].astype('category')
+                
+    end_mem = df.memory_usage().sum() / 1024**2
+    print(f'Memory decreased from {start_mem:.2f} MB to {end_mem:.2f} MB')
+    return df
+```
+
+#### 2. Method Chaining & `.pipe()` (Stateless Code)
+Avoid mutating DataFrames like `df = ...` repetitively.
+```python
+def remove_outliers(df, col):
+    """Example custom function for a pipeline."""
+    return df[df[col] < df[col].quantile(0.99)]
+
+# Production Pipeline
+clean_df = (pd.read_csv('massive_data.csv')
+    .pipe(optimize_memory)
+    .query('age >= 18 and status == "Active"')
+    .assign(
+        revenue_per_user=lambda x: x['revenue'] / x['users'],
+        is_high_value=lambda x: np.where(x['revenue_per_user'] > 100, True, False)
+    )
+    .pipe(remove_outliers, col='revenue_per_user')
+    .dropna(subset=['user_id'])
+    .set_index('user_id')
+)
+```
+
+#### 3. Vectorization Rules
+The golden rule of Pandas: **Never use `for idx, row in df.iterrows():` or `df.apply(lambda x: ...)`** if a NumPy vectorized alternative exists. Iteration in Python is painfully slow.
+```python
+# ❌ TRAGIC: 100x slower
+df['total'] = df.apply(lambda row: row['price'] * row['qty'], axis=1)
+
+# ✅ FAST: Vectorized C-level execution
+df['total'] = df['price'] * df['qty']
+
+# For complex IF/ELSE conditions, use np.where or np.select
+# np.where(condition, if_true, if_false)
+df['category'] = np.where(df['score'] > 90, 'Elite', 'Standard')
+
+# np.select(cond_list, choice_list, default)
+conditions = [df['score'] > 90, df['score'] > 70]
+choices = ['Elite', 'Average']
+df['category'] = np.select(conditions, choices, default='Poor')
+```
+
+#### 4. Transform for Group Broadcasting
+If you group data, calculate a metric, and need to attach that metric back to the raw, un-grouped data, use `transform()` instead of merging.
+```python
+# Bad: Group, aggregate, then merge back (slow and messy)
+avg_df = df.groupby('city')['sales'].mean().reset_index(name='city_avg')
+df = pd.merge(df, avg_df, on='city')
+
+# Good: Use transform to broadcast directly
+df['city_avg'] = df.groupby('city')['sales'].transform('mean')
+df['diff_from_city_avg'] = df['sales'] - df['city_avg']
+```
+
+#### 5. Stop using CSV for internal pipelines
+CSVs are text files. They are massive, slow to parse, and forget your data types (categories turn back into strings, datetimes turn into objects). Use **Parquet** (or Feather) for intermediate data.
+```python
+# Writing
+df.to_parquet('clean_data.parquet', engine='pyarrow', index=False)
+
+# Reading (blazing fast, types preserved)
+df_loaded = pd.read_parquet('clean_data.parquet')
+```
+For reading a 10GB CSV into a machine with 8GB RAM, use `chunksize`:
+```python
+chunk_iter = pd.read_csv('huge_file.csv', chunksize=100000)
+for chunk in chunk_iter:
+    chunk = optimize_memory(chunk)
+    # process chunk, push to database, or append to parquet...
+```
+
+---
+
 *Happy Coding! 🐍*

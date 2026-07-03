@@ -427,141 +427,331 @@ The Model Context Protocol (MCP) is an open standard designed by Anthropic that 
 
 ---
 
-### Core Concepts
+### 📹 Video 1: Model Context Protocol - The Why
 
-*   **Model Context Protocol (MCP)**: An open standard that acts as a universal API connector for AI. It solves the fragmentation problem of LLM integrations by standardizing how tools, prompts, and resources are exposed.
-    *   *Hinglish*: MCP ek open standard protocol hai jo AI tools ke integration ko simple banata hai. Ye AI models ke liye ek universal "USB-C port" ki tarah hai.
-*   **MCP Host**: The main application running the AI model that controls the session and orchestrates tool execution (e.g., Claude Desktop, Cursor, local IDE).
-    *   *Hinglish*: Wo main application jo AI model ko run karta hai aur tools ki execution ko control karta hai.
-*   **MCP Client**: The component inside the Host that initiates the connection to the server, queries its capabilities, and invokes tools.
-    *   *Hinglish*: Host ke andar ka connector module jo server se link build karta hai aur requests bhejta hai.
-*   **MCP Server**: A lightweight service or subprocess that exposes specific Tools, Resources, and Prompts to the Client.
-    *   *Hinglish*: Wo external backend service jo tools aur databases ko API ke through model ke liye expose karti hai.
-*   **Tools (LLM-controlled)**: Executable functions or actions that the AI model can dynamically choose to call to interact with external environments.
-    *   *Hinglish*: Functions jinhe AI model task solve karne ke liye select aur execute karta hai (e.g. database search, file writing).
-*   **Resources (App-controlled)**: Read-only data sources (logs, files, database schemas) supplied as static context to the LLM.
-    *   *Hinglish*: Read-only background files ya schemas jo model reference ke liye inspect kar sakta hai.
-*   **Prompts (User-controlled)**: Predefined prompt templates exposed by the server that users can select to configure the agent's task layout.
-    *   *Hinglish*: Pehle se likhe hue system prompts ya templates jinhe user agents configure karne ke liye select karta hai.
+#### 1. The Fragmented AI Tool Landscape (The Problem)
+Before MCP, every AI assistant (Claude Desktop, Cursor, ChatGPT, Windsurf) and every custom agent had to build its own unique integrations for every data source or API (Postgres, Slack, GitHub, local files).
+*   **For Clients:** Developers had to write custom API wrappers for every database or file system they wanted their model to access.
+*   **For Servers:** If you built a custom tool (e.g., a database query tool), you had to write a different connector for Claude, another for OpenAI, and another for Cursor.
+*   *Hinglish:* Har AI application ko har tool se connect karne ke liye alag se custom code likhna padta tha. Agar aapne ek database tool banaya, toh use Cursor aur Claude Desktop dono ke liye alag se integrate karna padta tha.
+
+#### 2. The Universal Interface (The Solution)
+MCP acts as a **"Universal USB-C Port" for AI**. 
+*   Instead of writing $N \times M$ custom integrations, servers expose their capabilities (Tools, Resources, Prompts) via a single standardized protocol.
+*   Any client that supports MCP can instantly plug into any server that supports MCP.
+
+```
++---------------+              +---------------+
+|  Claude App   |              | Cursor IDE    |
++-------+-------+              +-------+-------+
+        |                              |
+        +---------------+--------------+
+                        | (Standard MCP Protocol)
+                        v
+        +---------------+--------------+
+        |   Universal MCP Interface    |
+        +---------------+--------------+
+                        |
+        +---------------+--------------+
+        |  SQLite   | GitHub  | Slack  |  (MCP Servers)
+        +-----------+---------+--------+
+```
+
+*   *Hinglish:* MCP AI tools ke liye ek universal connector ki tarah hai. Ek baar server build kar diya, toh use kisi bhi MCP-supported client (Claude Desktop, Cursor) ke sath plug-and-play kiya ja sakta hai.
 
 ---
 
-### 🧠 First Principles: Stdio Communication & Handshake Lifecycle
+### 📹 Video 2: Model Context Protocol Architecture
 
-At the lowest level, local MCP servers communicate using **Standard Input (`sys.stdin`)** and **Standard Output (`sys.stdout`)** via **JSON-RPC 2.0** messages.
+The protocol divides responsibilities across three key layers:
 
 ```
-+-----------------------------------------------------------------------------------+
-|                            MCP HANDSHAKE & RUNTIME LIFECYCLE                      |
-+------------------------------------+----------------------------------------------+
-|             MCP Client             |                  MCP Server                  |
-|                                    |                                              |
-|  1. Send "initialize" Request  --->|                                              |
-|     (Protocol version, capabilities) |                                              |
-|                                    |<---  2. Return "initialize" Response         |
-|                                    |     (Server features, schemas)               |
-|  3. Send "initialized" Notification|                                              |
-|     (Ready to exchange messages)   |                                              |
-|  ================================== ACTIVE OPERATIONS ========================== |
-|  4. Query "tools/list" Request --->|                                              |
-|                                    |<---  5. Return tool names and Zod schemas    |
-|  6. Call "tools/call" Request  --->|                                              |
-|     (Executes Python/JS logic)     |<---  7. Return Tool Output payload           |
-|  ================================== SHUTDOWN HANDSHAKE ========================= |
-|  8. Send "shutdown" Request    --->|                                              |
-|                                    |<---  9. Return empty Response                |
-|  10. Send "exit" Notification  --->| (Process exits cleanly)                      |
-+------------------------------------+----------------------------------------------+
++-------------------------------------------------------+
+|                       HOST (e.g. Claude Desktop)      |
+|  +-------------------------------------------------+  |
+|  |                CLIENT (MCP Connector)           |  |
+|  +-----------------------+-------------------------+  |
++--------------------------|----------------------------+
+                           | Stdio / SSE Transport
++--------------------------v----------------------------+
+|                       SERVER                          |
+|  +------------+   +--------------+   +-------------+  |
+|  |   Tools    |   |  Resources   |   |   Prompts   |  |
+|  | (LLM-run)  |   |  (App-run)   |   | (Templates) |  |
+|  +------------+   +--------------+   +-------------+  |
++-------------------------------------------------------+
 ```
 
-#### Low-Level JSON-RPC 2.0 Message Primitives
-1.  **Request (Requires `id`):** The client requests a tool run.
-    ```json
-    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "query_db", "arguments": {"id": 101}}}
-    ```
-2.  **Response (Matches `id`):** The server returns the tool output.
-    ```json
-    {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "Record details..."}]}}
-    ```
-3.  **Notification (No `id`):** One-way status update (e.g. `initialized`).
-    ```json
-    {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
-    ```
+1.  **Host:** The parent application running the AI model that controls the session (e.g., Claude Desktop, Cursor, local IDE terminal).
+2.  **Client:** The engine inside the Host that initiates connection to the server, parses its capabilities, and routes instructions.
+3.  **Server:** A lightweight, secure subprocess or remote service that exposes data and execution capabilities.
+4.  **The Three MCP Primitives:**
+    *   **Tools (LLM-Controlled):** Executable functions that the model can choose to call (e.g. `add_expense(amount, category)`). These are dynamic and modify state.
+    *   **Resources (App-Controlled):** Read-only data sources (e.g., static JSON files, logs, database schemas) that are fed as context to the model.
+    *   **Prompts (User-Controlled):** Pre-written templates that can be loaded to instruct the model on specific tasks.
+
+*   *Hinglish:* 
+    *   **Host:** Main software jo AI model chala raha hai.
+    *   **Client:** Host ke andar ka module jo server se communication manage karta hai.
+    *   **Server:** Wo pipeline jo tools, read-only data (Resources), aur system templates (Prompts) ko expose karti hai.
 
 ---
 
-### 💻 FastMCP Python Server Implementation
+### 📹 Video 3: The MCP Lifecycle
 
-`FastMCP` is a high-level wrapper around the Python MCP SDK that registers tools, resources, and prompts using decorators:
+MCP defines a strict session lifecycle using **JSON-RPC 2.0** messages sent over Stdio or SSE transport layers.
 
-```python
-import sys
-from fastmcp import FastMCP
+#### 1. Handshake & Initialization Sequence
+Before any message can be processed, the client and server must agree on protocols:
 
-# Force UTF-8 encoding on Windows to prevent terminal output issues
-sys.stdout.reconfigure(encoding='utf-8')
+1.  **Initialize Request:** The client sends an `initialize` request with its protocol version and client capabilities.
+2.  **Initialize Response:** The server responds with its own protocol version, capabilities, and basic server info.
+3.  **Initialized Notification:** The client sends a one-way notification indicating that it is ready to begin active session operations.
 
-# 1. Initialize Server instance
-mcp = FastMCP("Database & API Specs Server")
-
-# 2. Expose a dynamic, executable Tool
-@mcp.tool()
-def search_expense_records(user_id: int, category: str = "all") -> str:
-    """
-    Search local transaction expenses. Available categories: food, travel, software.
-    """
-    # Exposing mock database query execution
-    return f"Found 2 records under '{category}' for User {user_id}: Total $45.00"
-
-# 3. Expose a read-only Resource
-@mcp.resource("docs://specifications")
-def get_api_specifications() -> str:
-    """
-    Provides API schemas and database structures to the model as static context.
-    """
-    return "Database Schema: users(id, name, email); expenses(id, user_id, amount, category);"
-
-# 4. Expose a Prompt template
-@mcp.prompt()
-def analyze_expenses_prompt(user_id: int) -> str:
-    """Pre-loaded prompt template for expense inspection."""
-    return f"Review all expense records for User {user_id} and identify saving opportunities."
-
-if __name__ == "__main__":
-    # Runs the stdio listening loop (stdin/stdout)
-    mcp.run()
 ```
+Client                                                   Server
+  |                                                        |
+  | --- [initialize Request] (ID: 1) --------------------> |
+  | <--- [initialize Response] (ID: 1) ------------------- |
+  | --- [initialized Notification] (No ID) --------------> |
+  |                                                        |
+  | ================== ACTIVE SESSION ==================== |
+```
+
+#### 2. Active Session Operations
+*   **Listing Tools:** Client queries `tools/list` to find out what the server can do.
+*   **Calling Tools:** Client invokes a tool using `tools/call` with parameters.
+
+#### 3. Shutdown Sequence
+*   **Shutdown Request:** Client sends `shutdown` request to gracefully stop operations.
+*   **Exit Notification:** Client sends `exit` to terminate the subprocess.
+
+#### 4. JSON-RPC 2.0 Message Schema
+*   **Request Packet:**
+    ```json
+    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "add_expense", "arguments": {"amount": 500, "category": "Food"}}}
+    ```
+*   **Response Packet:**
+    ```json
+    {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "Expense added successfully."}]}}
+    ```
+
+*   *Hinglish:* Client aur Server ke beech har request aur response **JSON-RPC 2.0** format me hota hai. Connection start hone par pehle handshake hota hai (`initialize` $\rightarrow$ `initialized`), fir active conversation chalti hai, aur last me `shutdown` request bhej kar connection close kiya jata hai.
 
 ---
 
-### ⚙️ Claude Desktop Server Configuration
+### 📹 Video 4: How to connect MCP Servers to Claude Desktop
 
-To connect your custom MCP server to **Claude Desktop**, you must register it in your local configuration file:
-* **Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json`
+Local MCP servers run as **subprocesses** managed directly by the Host. To connect your server to **Claude Desktop**, you must configure it in the host configuration file.
+
+*   **Config Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json`
+*   **Configuration Layout:**
 
 ```json
 {
   "mcpServers": {
-    "my-expense-server": {
+    "my-local-tracker": {
       "command": "python",
       "args": [
-        "c:/ace/lvlup/projects/mcp_server.py"
+        "c:/ace/lvlup/projects/expense_tracker.py"
       ],
       "env": {
-        "MY_ENV_API_KEY": "sk-12345"
+        "DB_PATH": "c:/ace/lvlup/projects/expenses.db"
       }
     }
   }
 }
 ```
 
+*   *Hinglish:* Local servers ko run karne ke liye Claude Desktop background me python run-command trigger karta hai. Iska configuration path `claude_desktop_config.json` hota hai jahan command, file paths aur environment variables pass kiye jaate hain.
+
 ---
 
-### 🤖 Building a Custom MCP Client in LangGraph
+### 📹 Video 5: How to Build Local MCP Servers (SQLite Expense Tracker)
 
-In production, you don't just connect MCP servers to Claude Desktop; you build **custom clients** that connect to multiple MCP servers, fetch their tools, and bind them into a LangGraph ReAct agent.
+Here is a complete, production-ready implementation of a local MCP server that stores data in an SQLite database using Python and `FastMCP`.
 
-Here is the complete implementation code for an async stdio client:
+```python
+import sqlite3
+import os
+import sys
+from fastmcp import FastMCP
+
+# Ensure UTF-8 output encoding on Windows
+sys.stdout.reconfigure(encoding='utf-8')
+
+# Initialize FastMCP Server
+mcp = FastMCP("SQLite Expense Tracker")
+DB_FILE = os.environ.get("DB_PATH", "expenses.db")
+
+def init_db():
+    """Initializes SQLite database and tables."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            amount REAL NOT NULL,
+            category TEXT NOT NULL,
+            description TEXT NOT NULL,
+            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Initialize DB on startup
+init_db()
+
+# --- 1. TOOLS (LLM-Controlled) ---
+
+@mcp.tool()
+def add_expense(amount: float, category: str, description: str) -> str:
+    """
+    Adds a new expense to the local SQLite database.
+    Available categories: Food, Travel, Software, Rent, Utilities.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO expenses (amount, category, description) VALUES (?, ?, ?)",
+            (amount, category.title(), description)
+        )
+        conn.commit()
+        conn.close()
+        return f"✅ Success: Added expense of INR {amount} under '{category}' for '{description}'."
+    except Exception as e:
+        return f"❌ Error adding expense: {str(e)}"
+
+@mcp.tool()
+def get_expenses(category: str = None) -> str:
+    """
+    Retrieves expenses. Optionally filters by category.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        if category:
+            cursor.execute("SELECT amount, category, description, date FROM expenses WHERE category = ?", (category.title(),))
+        else:
+            cursor.execute("SELECT amount, category, description, date FROM expenses")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return "No expenses found."
+        
+        output = ["Amount | Category | Description | Date"]
+        output.append("-" * 50)
+        for r in rows:
+            output.append(f"INR {r[0]} | {r[1]} | {r[2]} | {r[3]}")
+        return "\n".join(output)
+    except Exception as e:
+        return f"❌ Error fetching expenses: {str(e)}"
+
+@mcp.tool()
+def get_expense_summary() -> str:
+    """
+    Returns aggregated expenses grouped by category.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT category, SUM(amount) FROM expenses GROUP BY category")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return "No summary data available."
+        
+        output = ["Category | Total Amount"]
+        output.append("-" * 30)
+        for r in rows:
+            output.append(f"{r[0]} | INR {r[1]:.2f}")
+        return "\n".join(output)
+    except Exception as e:
+        return f"❌ Error generating summary: {str(e)}"
+
+# --- 2. RESOURCES (App-Controlled Static Context) ---
+
+@mcp.resource("categories://list")
+def list_categories() -> str:
+    """
+    Returns the list of valid categories allowed by the system.
+    """
+    return '["Food", "Travel", "Software", "Rent", "Utilities"]'
+
+# --- 3. PROMPTS (Templates) ---
+
+@mcp.prompt()
+def monthly_audit(month: str) -> str:
+    """
+    Generates a prompt template for inspecting financial leaks.
+    """
+    return f"Identify saving opportunities by auditing all expense summaries in detail for the month of {month}."
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+---
+
+### 📹 Video 6: How to Build & Deploy Remote MCP Servers (SSE Transport)
+
+#### 1. Why Stdio fails in Cloud Environments
+Stdio requires the Client to start the Server as a direct local child process. For cloud-hosted servers (e.g. running on AWS, Render, or FastMCP Cloud), there is no shared Stdio pipe. We must use a web-based transport: **Server-Sent Events (SSE)**.
+
+```
+Client                                                   Server (Cloud)
+  |                                                        |
+  | === GET /sse (Establishes EventStream connection) ===> | (Keeps connection open)
+  | <== Streams server capabilities / handshake events ==== |
+  |                                                        |
+  | === POST /messages (Sends JSON-RPC payload) =========> | (Executes tool logic)
+```
+
+#### 2. SSE Server Implementation (Python/Uvicorn)
+FastMCP supports SSE out of the box using Starlette and Uvicorn:
+
+```python
+# run_sse_server.py
+import sys
+from fastmcp import FastMCP
+
+# Force UTF-8 encoding
+sys.stdout.reconfigure(encoding='utf-8')
+
+mcp = FastMCP("Remote Analytics Server")
+
+@mcp.tool()
+def get_system_health() -> str:
+    """Exposes remote cluster CPU and Memory health details."""
+    return "Cluster Status: Healthy | CPU Usage: 42% | Memory: 64%"
+
+if __name__ == "__main__":
+    # Runs the server as an HTTP SSE listener on port 8000
+    mcp.run(transport="sse")
+    
+    # Modern Alternative (Streamable HTTP):
+    # mcp.run(transport="http")
+```
+
+To start this server:
+```bash
+uv run uvicorn run_sse_server:mcp --host 0.0.0.0 --port 8000
+```
+
+> [!NOTE]
+> **SSE vs Streamable HTTP:** In the latest MCP specification, SSE has been marked as legacy/deprecated. The modern recommended transport is **Streamable HTTP** (run via `transport="http"` or by mounting `mcp.streamable_http_app()` inside FastAPI/Starlette).
+
+*   *Hinglish:* Cloud hosting ke case mein stdio streams use nahi ho sakti, isliye hum HTTP/SSE protocol use karte hain. Client `/sse` end-point par ek steady GET connection stream open rakhta hai aur commands ko `/messages` end-point par POST requests ke form mein bhejta hai. Modern applications mein SSE ki jagah **Streamable HTTP** (`transport="http"`) use karne ki advice di jaati hai.
+
+---
+
+### 📹 Video 7: How to Build Custom MCP Clients
+
+To use an MCP server programmatically in python (e.g., inside LangGraph or LangChain), you write a custom client that connects to the server process, discovers its schemas, and exposes them as tools.
 
 ```python
 import asyncio
@@ -572,75 +762,87 @@ from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
-# Ensure UTF-8 output encoding for local streams
+# Ensure UTF-8 output encoding
 sys.stdout.reconfigure(encoding='utf-8')
 
-async def run_mcp_agent():
-    # 1. Configure Server connection parameters
+async def main():
+    # 1. Server startup parameters
     server_params = StdioServerParameters(
         command="python",
-        args=["c:/ace/lvlup/projects/mcp_server.py"]
+        args=["c:/ace/lvlup/projects/expense_tracker.py"],
+        env={"DB_PATH": "expenses.db"}
     )
 
-    # 2. Establish connection to Stdio streams
+    # 2. Establish connection to local Stdio
     async with stdio_client(server_params) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
-            # Execute protocol handshake
+            # Protocol Handshake
             await session.initialize()
-            print("✅ MCP Client initialized successfully.")
-
-            # 3. Dynamic Tool Discovery
+            
+            # Fetch all exposed tools
             tools_response = await session.list_tools()
             langchain_tools = []
 
             for mcp_tool in tools_response.tools:
-                print(f"Discovered Tool: {mcp_tool.name}")
-                
-                # Wrap MCP tool as a LangChain-compatible tool
+                # Wrap each MCP tool into LangChain schema
                 @tool(name=mcp_tool.name, description=mcp_tool.description)
-                def wrapped_tool(arguments: dict) -> str:
-                    # Execute synchronous helper running client task loop
-                    loop = asyncio.get_event_loop()
-                    result = loop.run_until_complete(
-                        session.call_tool(mcp_tool.name, arguments=arguments)
-                    )
-                    return "".join(c.text for c in result.content)
+                async def wrapped_tool(arguments: dict) -> str:
+                    res = await session.call_tool(mcp_tool.name, arguments=arguments)
+                    return "".join(c.text for c in res.content)
                 
                 langchain_tools.append(wrapped_tool)
 
-            # 4. Initialize LLM & Stateful Graph
+            # 3. Create LangGraph ReAct agent
             model = ChatOpenAI(model="gpt-4o")
             agent = create_react_agent(model, tools=langchain_tools)
 
-            # Run query
-            inputs = {"messages": [("user", "Check saving options for User 402.")]}
+            # Test Query
+            inputs = {"messages": [("user", "Add an expense of 450 INR for Pizza under Food category.")]}
             result = await agent.ainvoke(inputs)
             print("Response:", result["messages"][-1].content)
 
 if __name__ == "__main__":
-    asyncio.run(run_mcp_agent())
+    asyncio.run(main())
 ```
 
----
-
-### 🛡️ Modern 2025/2026 MCP Advancements
-
-1.  **Distributed SSE Transport (Web-Scale MCP):**
-    *   Unlike stdio which is restricted to a single host machine, SSE (Server-Sent Events) transport runs over HTTP. 
-    *   **Architecture:** The client opens an event-source GET connection to stream server-sent JSON messages, and uses POST requests to send client-side JSON-RPC payloads back to the server. This allows cloud hosts to coordinate with remote database microservices globally.
-2.  **Smithery Registry:**
-    *   Smithery has emerged as the central registry (package manager) for MCP servers. Developers can discover, download, and configure containerized/local MCP servers (e.g. Postgres, SQLite, Manim, GitHub) using a unified CLI tool.
-3.  **Sandboxing & Quarantine:**
-    *   Production setups execute untrusted third-party MCP servers inside Docker containers or secure WASM/V8 sandboxes, protecting the parent system from malicious code execution or data extraction via tool injections.
+*   *Hinglish:* Custom client likhne ke liye hum Python `mcp` SDK ki `stdio_client` and `ClientSession` use karte hain. Server connection build hone par `list_tools()` se tools structure uthake use `@tool` decorator ke metadata model mein wrap karte hain aur LangGraph `create_react_agent` ko de dete hain.
 
 ---
 
-### 🇮🇳 Hinglish Summary
+### 📹 Video 8: Claude Code & MCP Integration
 
-Bhaiya, MCP standard AI integrations ko replace kar raha hai. 
-1.  **Transport Layers:** Agar local app run kar rahe ho (jaise Claude Desktop/Cursor), toh standard input/output pipes ka use karke **Stdio transport** chalao. Agar server-to-server cloud connection chahiye, toh HTTP based **SSE transport** use hoga.
-2.  **Protocol Handshake:** Pehle Client `initialize` packet bhejta hai, server description schemas respond karta hai, fir dynamic `tools/list` fetch hone ke baad `tools/call` sequence start hoti hai.
-3.  **Custom Clients:** LangGraph/LangChain agents me MCP servers ko inject karne ke liye server processes connect karo, parameters extract karo, aur unhe native tools me wrap karke compile-react-agent method me pass karo.
+**Claude Code** is Anthropic's agentic CLI tool designed for developers. It supports running MCP servers directly in the terminal workspace.
+
+#### 1. Configuration Setup
+Unlike Claude Desktop, Claude Code stores its settings in your user home directory:
+*   **Path:** `~/.claude/config.json`
+*   **Structure:**
+
+```json
+{
+  "mcpServers": {
+    "file-management": {
+      "command": "node",
+      "args": ["/path/to/mcp-server-filesystem/dist/index.js"]
+    }
+  }
+}
+```
+
+#### 2. Debugging with MCP Inspector
+The **MCP Inspector** is an interactive, GUI-based playground built by Anthropic to test your servers completely isolated from Claude.
+
+*   **How to run (Stdio Server):**
+    ```bash
+    npx @modelcontextprotocol/inspector python expense_tracker.py
+    ```
+*   This command starts the server process, injects a proxy client, and launches a web browser UI at `http://localhost:5173`.
+*   Inside the GUI, you can:
+    *   Inspect exposed **Tools** and execute them manually with JSON arguments.
+    *   View active **Resources** context templates.
+    *   Trigger **Prompts** and see the generated messages.
+
+*   *Hinglish:* Claude Code CLI settings file `~/.claude/config.json` mein store hoti hain. Kisi bhi MCP server ko test aur debug karne ke liye hum **MCP Inspector** tool use karte hain: `npx @modelcontextprotocol/inspector <command> <args>`. Yeh local host `http://localhost:5173` par ek web GUI khol deta hai jahan tools aur parameters directly test ho sakte hain.
 
 ---
 

@@ -459,6 +459,18 @@ MCP acts as a **"Universal USB-C Port" for AI**.
 
 *   *Hinglish:* MCP AI tools ke liye ek universal connector ki tarah hai. Ek baar server build kar diya, toh use kisi bhi MCP-supported client (Claude Desktop, Cursor) ke sath plug-and-play kiya ja sakta hai.
 
+#### 3. Case Study: Automated Newsletter Generator Project (The Trailer Demo)
+In the playlist introduction, Nitish demonstrates the power of MCP by building an **Automated Newsletter Generator** agent. Rather than writing hardcoded logic, the agent orchestrates multiple independent MCP servers:
+1.  **GitHub MCP Server:** Fetches the trending Python repository descriptions and recent commit logs.
+2.  **File System MCP Server:** Reads codebase structures and writes intermediate draft files (`draft_newsletter.md`).
+3.  **Gmail/Email MCP Server:** Handles the final newsletter dispatch to a subscriber list.
+
+*   **Orchestrator Prompt:**
+    ```text
+    "Look at the trending python repos from today's list, write a concise summary, save it as a local markdown file, and email it to my distribution list."
+    ```
+*   **How it executes:** The model dynamically selects the correct tool from the pool of exposed MCP tools, passes parameters, gets the results, and moves to the next step autonomously.
+
 ---
 
 ### 📹 Video 2: Model Context Protocol Architecture
@@ -486,7 +498,7 @@ The protocol divides responsibilities across three key layers:
 2.  **Client:** The engine inside the Host that initiates connection to the server, parses its capabilities, and routes instructions.
 3.  **Server:** A lightweight, secure subprocess or remote service that exposes data and execution capabilities.
 4.  **The Three MCP Primitives:**
-    *   **Tools (LLM-Controlled):** Executable functions that the model can choose to call (e.g. `add_expense(amount, category)`). These are dynamic and modify state.
+    *   **Tools (LLM-Controlled):** Executable functions that the model can choose to call (e.g. `add_expense(amount, category)`). These are dynamic, modify state, and require model parameters.
     *   **Resources (App-Controlled):** Read-only data sources (e.g., static JSON files, logs, database schemas) that are fed as context to the model.
     *   **Prompts (User-Controlled):** Pre-written templates that can be loaded to instruct the model on specific tasks.
 
@@ -504,9 +516,15 @@ MCP defines a strict session lifecycle using **JSON-RPC 2.0** messages sent over
 #### 1. Handshake & Initialization Sequence
 Before any message can be processed, the client and server must agree on protocols:
 
-1.  **Initialize Request:** The client sends an `initialize` request with its protocol version and client capabilities.
-2.  **Initialize Response:** The server responds with its own protocol version, capabilities, and basic server info.
-3.  **Initialized Notification:** The client sends a one-way notification indicating that it is ready to begin active session operations.
+1.  **Initialize Request:** The client sends an `initialize` request containing:
+    *   `protocolVersion`: The MCP protocol version the client supports.
+    *   `capabilities`: Client-side capabilities (e.g., roots, sampling).
+    *   `clientInfo`: Client name and version.
+2.  **Initialize Response:** The server responds with:
+    *   `protocolVersion`: The version it agrees to use.
+    *   `capabilities`: Server capabilities (e.g., listing tools, resources, prompts).
+    *   `serverInfo`: Server details.
+3.  **Initialized Notification:** The client sends a one-way notification indicating that the handshake is complete and the active session has started.
 
 ```
 Client                                                   Server
@@ -544,7 +562,7 @@ Client                                                   Server
 
 Local MCP servers run as **subprocesses** managed directly by the Host. To connect your server to **Claude Desktop**, you must configure it in the host configuration file.
 
-*   **Config Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json`
+*   **Config Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json` (Windows) / `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS).
 *   **Configuration Layout:**
 
 ```json
@@ -563,7 +581,42 @@ Local MCP servers run as **subprocesses** managed directly by the Host. To conne
 }
 ```
 
-*   *Hinglish:* Local servers ko run karne ke liye Claude Desktop background me python run-command trigger karta hai. Iska configuration path `claude_desktop_config.json` hota hai jahan command, file paths aur environment variables pass kiye jaate hain.
+#### 🛠️ Official Prebuilt Server Configurations
+You can connect prebuilt, official MCP servers directly in your `claude_desktop_config.json` using `npx`:
+
+1.  **GitHub Server (Search, Issues, PRs):**
+    ```json
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your_github_token"
+      }
+    }
+    ```
+2.  **PostgreSQL Server (Query and inspect DB):**
+    ```json
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:pass@localhost:5432/dbname"]
+    }
+    ```
+3.  **Fetch Server (Web scraping & markdown conversion):**
+    ```json
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"]
+    }
+    ```
+4.  **SQLite Server:**
+    ```json
+    "sqlite": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "--db-path", "c:/ace/lvlup/projects/expenses.db"]
+    }
+    ```
+
+*   *Hinglish:* Local ya official prebuilt servers (GitHub, Postgres, SQLite, Fetch) ko run karne ke liye Claude Desktop background me python ya Node/npx command execute karta hai. Iska configuration path `claude_desktop_config.json` hota hai jahan command, parameters, aur environment variables specified hote hain.
 
 ---
 
@@ -711,35 +764,56 @@ Client                                                   Server (Cloud)
   | === POST /messages (Sends JSON-RPC payload) =========> | (Executes tool logic)
 ```
 
-#### 2. SSE Server Implementation (Python/Uvicorn)
-FastMCP supports SSE out of the box using Starlette and Uvicorn:
+#### 2. Production FastAPI SSE Mounting Implementation
+FastMCP has built-in Starlette integration. For complex production setups, you can mount FastMCP inside a standard FastAPI application using `SseServerTransport`:
 
 ```python
-# run_sse_server.py
-import sys
-from fastmcp import FastMCP
+from fastapi import FastAPI
+from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import SseServerTransport
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+import uvicorn
 
-# Force UTF-8 encoding
-sys.stdout.reconfigure(encoding='utf-8')
-
-mcp = FastMCP("Remote Analytics Server")
+# Initialize FastMCP instance
+mcp = FastMCP("Production Remote DB")
 
 @mcp.tool()
-def get_system_health() -> str:
-    """Exposes remote cluster CPU and Memory health details."""
-    return "Cluster Status: Healthy | CPU Usage: 42% | Memory: 64%"
+def read_user_count() -> int:
+    """Returns the total user count from database."""
+    return 1402
+
+# Configure SSE Transport with base endpoint routing
+transport = SseServerTransport("/messages/")
+
+async def handle_sse(request):
+    """Establishes EventStream GET route and runs MCP message loop."""
+    async with transport.connect_sse(
+        request.scope, request.receive, request._send
+    ) as (in_stream, out_stream):
+        await mcp._mcp_server.run(
+            in_stream, out_stream, mcp._mcp_server.create_initialization_options()
+        )
+
+# Starlette mount configuration
+sse_app = Starlette(
+    routes=[
+        Route("/sse", endpoint=handle_sse),
+        Mount("/messages/", app=transport.handle_post_message),
+    ]
+)
+
+app = FastAPI()
+app.mount("/mcp", sse_app)
 
 if __name__ == "__main__":
-    # Runs the server as an HTTP SSE listener on port 8000
-    mcp.run(transport="sse")
-    
-    # Modern Alternative (Streamable HTTP):
-    # mcp.run(transport="http")
+    # Start ASGI server using uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
 To start this server:
 ```bash
-uv run uvicorn run_sse_server:mcp --host 0.0.0.0 --port 8000
+uv run uvicorn run_sse_server:app --host 0.0.0.0 --port 8000
 ```
 
 > [!NOTE]
@@ -829,7 +903,13 @@ Unlike Claude Desktop, Claude Code stores its settings in your user home directo
 }
 ```
 
-#### 2. Debugging with MCP Inspector
+#### 2. Security Permission Modes (Allow, Deny, Ask)
+Since Claude Code operates directly on your local system, it executes tools with a strict security model based on user permissions:
+1.  **Allow (Auto-run):** Safe tools (like reading a file or searching a database) run automatically.
+2.  **Deny:** Blocked tools will fail immediately.
+3.  **Ask (Human-in-the-loop):** Destructive actions (modifying code files, deleting databases, running arbitrary bash scripts) trigger a prompt in the terminal asking the user for explicit confirmation before executing the tool.
+
+#### 3. Debugging with MCP Inspector
 The **MCP Inspector** is an interactive, GUI-based playground built by Anthropic to test your servers completely isolated from Claude.
 
 *   **How to run (Stdio Server):**

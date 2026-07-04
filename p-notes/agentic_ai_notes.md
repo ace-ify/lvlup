@@ -764,18 +764,15 @@ Client                                                   Server (Cloud)
   | === POST /messages (Sends JSON-RPC payload) =========> | (Executes tool logic)
 ```
 
-#### 2. Production FastAPI SSE Mounting Implementation
-FastMCP has built-in Starlette integration. For complex production setups, you can mount FastMCP inside a standard FastAPI application using `SseServerTransport`:
+#### 2. Production FastAPI Integration Implementation
+Modern FastMCP servers can be mounted directly into FastAPI applications as standard ASGI sub-applications without manual transport management:
 
 ```python
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
-from mcp.server.sse import SseServerTransport
-from starlette.applications import Starlette
-from starlette.routing import Route, Mount
+from fastmcp import FastMCP
 import uvicorn
 
-# Initialize FastMCP instance
+# Initialize FastMCP instance using the modern high-level class
 mcp = FastMCP("Production Remote DB")
 
 @mcp.tool()
@@ -783,28 +780,10 @@ def read_user_count() -> int:
     """Returns the total user count from database."""
     return 1402
 
-# Configure SSE Transport with base endpoint routing
-transport = SseServerTransport("/messages/")
-
-async def handle_sse(request):
-    """Establishes EventStream GET route and runs MCP message loop."""
-    async with transport.connect_sse(
-        request.scope, request.receive, request._send
-    ) as (in_stream, out_stream):
-        await mcp._mcp_server.run(
-            in_stream, out_stream, mcp._mcp_server.create_initialization_options()
-        )
-
-# Starlette mount configuration
-sse_app = Starlette(
-    routes=[
-        Route("/sse", endpoint=handle_sse),
-        Mount("/messages/", app=transport.handle_post_message),
-    ]
-)
-
 app = FastAPI()
-app.mount("/mcp", sse_app)
+
+# Mount FastMCP directly inside FastAPI using http_app()
+app.mount("/mcp", mcp.http_app())
 
 if __name__ == "__main__":
     # Start ASGI server using uvicorn
@@ -832,8 +811,8 @@ import asyncio
 import sys
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
 # Ensure UTF-8 output encoding
@@ -853,20 +832,10 @@ async def main():
             # Protocol Handshake
             await session.initialize()
             
-            # Fetch all exposed tools
-            tools_response = await session.list_tools()
-            langchain_tools = []
+            # 3. Load MCP tools as LangChain tools using the official adapter
+            langchain_tools = await load_mcp_tools(session)
 
-            for mcp_tool in tools_response.tools:
-                # Wrap each MCP tool into LangChain schema
-                @tool(name=mcp_tool.name, description=mcp_tool.description)
-                async def wrapped_tool(arguments: dict) -> str:
-                    res = await session.call_tool(mcp_tool.name, arguments=arguments)
-                    return "".join(c.text for c in res.content)
-                
-                langchain_tools.append(wrapped_tool)
-
-            # 3. Create LangGraph ReAct agent
+            # 4. Create LangGraph ReAct agent
             model = ChatOpenAI(model="gpt-4o")
             agent = create_react_agent(model, tools=langchain_tools)
 
@@ -879,7 +848,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-*   *Hinglish:* Custom client likhne ke liye hum Python `mcp` SDK ki `stdio_client` and `ClientSession` use karte hain. Server connection build hone par `list_tools()` se tools structure uthake use `@tool` decorator ke metadata model mein wrap karte hain aur LangGraph `create_react_agent` ko de dete hain.
+*   *Hinglish:* Custom client likhne ke liye hum Python `mcp` SDK ki `stdio_client` and `ClientSession` use karte hain. Server connection build hone par `langchain-mcp-adapters` ki `load_mcp_tools(session)` method ka use karke direct saare tools ko standard LangChain tools me convert karke LangGraph ReAct agent ko de dete hain.
 
 ---
 

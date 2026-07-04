@@ -427,18 +427,33 @@ The Model Context Protocol (MCP) is an open standard designed by Anthropic that 
 
 ---
 
-### 📹 Video 1: Model Context Protocol - The Why
+## 0. Version Timeline — Pehle Ye Samajh Lo
 
-#### 1. The Fragmented AI Tool Landscape (The Problem)
-Before MCP, every AI assistant (Claude Desktop, Cursor, ChatGPT, Windsurf) and every custom agent had to build its own unique integrations for every data source or API (Postgres, Slack, GitHub, local files).
-*   **For Clients:** Developers had to write custom API wrappers for every database or file system they wanted their model to access.
-*   **For Servers:** If you built a custom tool (e.g., a database query tool), you had to write a different connector for Claude, another for OpenAI, and another for Cursor.
-*   *Hinglish:* Har AI application ko har tool se connect karne ke liye alag se custom code likhna padta tha. Agar aapne ek database tool banaya, toh use Cursor aur Claude Desktop dono ke liye alag se integrate karna padta tha.
+MCP ka spec tezi se evolve hua hai.
 
-#### 2. The Universal Interface (The Solution)
-MCP acts as a **"Universal USB-C Port" for AI**. 
-*   Instead of writing $N \times M$ custom integrations, servers expose their capabilities (Tools, Resources, Prompts) via a single standardized protocol.
-*   Any client that supports MCP can instantly plug into any server that supports MCP.
+| Version | Date | Kya naya aaya |
+|---|---|---|
+| `2024-11-05` | Nov 2024 | Initial stable — Tools, Resources, Prompts, basic Sampling |
+| `2025-03-26` | Mar 2025 | OAuth 2.1 authorization pehli baar aaya, **Streamable HTTP introduce hui — isi version se HTTP+SSE transport deprecated ho gayi** |
+| `2025-06-18` | Jun 2025 | **Elicitation** introduce hui, Structured tool output, Resource Indicators (RFC 8707) |
+| `2025-11-25` | Nov 2025 | OpenID Connect Discovery, **URL mode elicitation**, Sampling tool calling, Client ID Metadata Documents |
+| `2026-07-28` (Release Candidate → final ship) | **BREAKING CHANGES** — protocol stateless ho raha hai; **Sampling, Roots, Logging deprecate** ho rahe hain |
+
+*Source: [MCP Specification versions](https://modelcontextprotocol.info/specification/), [2026-07-28 Release Candidate](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)*
+
+---
+
+## 1. The Why — Fragmented AI Tool Landscape
+
+### The Problem
+Before MCP, har AI assistant (Claude Desktop, Cursor, ChatGPT, Windsurf) aur har custom agent ko har data source/API (Postgres, Slack, GitHub, local files) ke liye apna unique integration banana padta tha.
+- **Clients ke liye:** Har database/file system ke liye custom API wrapper likhna padta tha
+- **Servers ke liye:** Ek database query tool banaya to Claude, OpenAI, Cursor — sabke liye alag connector likhna padta tha
+
+*Hinglish:* Har AI application ko har tool se connect karne ke liye alag se custom code likhna padta tha — classic **M × N problem**.
+
+### The Solution — Universal Interface
+MCP ek **"Universal USB-C Port" for AI** ki tarah kaam karta hai. Servers apni capabilities (Tools, Resources, Prompts) ek standardized protocol ke through expose karte hain — koi bhi MCP-supporting client kisi bhi MCP-supporting server se instantly plug ho sakta hai. Ye M × N ko **M + N** problem bana deta hai.
 
 ```
 +---------------+              +---------------+
@@ -457,25 +472,22 @@ MCP acts as a **"Universal USB-C Port" for AI**.
         +-----------+---------+--------+
 ```
 
-*   *Hinglish:* MCP AI tools ke liye ek universal connector ki tarah hai. Ek baar server build kar diya, toh use kisi bhi MCP-supported client (Claude Desktop, Cursor) ke sath plug-and-play kiya ja sakta hai.
+### Case Study: Automated Newsletter Generator
+Ek agent jo multiple independent MCP servers ko orchestrate karta hai:
+1. **GitHub MCP Server** — trending Python repos ke descriptions, commits fetch karta hai
+2. **File System MCP Server** — codebase padhta hai, draft files likhta hai
+3. **Gmail/Email MCP Server** — final newsletter dispatch karta hai
 
-#### 3. Case Study: Automated Newsletter Generator Project (The Trailer Demo)
-In the playlist introduction, Nitish demonstrates the power of MCP by building an **Automated Newsletter Generator** agent. Rather than writing hardcoded logic, the agent orchestrates multiple independent MCP servers:
-1.  **GitHub MCP Server:** Fetches the trending Python repository descriptions and recent commit logs.
-2.  **File System MCP Server:** Reads codebase structures and writes intermediate draft files (`draft_newsletter.md`).
-3.  **Gmail/Email MCP Server:** Handles the final newsletter dispatch to a subscriber list.
+```text
+Prompt: "Look at the trending python repos from today's list, write a concise 
+summary, save it as a local markdown file, and email it to my distribution list."
+```
 
-*   **Orchestrator Prompt:**
-    ```text
-    "Look at the trending python repos from today's list, write a concise summary, save it as a local markdown file, and email it to my distribution list."
-    ```
-*   **How it executes:** The model dynamically selects the correct tool from the pool of exposed MCP tools, passes parameters, gets the results, and moves to the next step autonomously.
+Model dynamically sahi tool select karta hai, parameters pass karta hai, results leta hai, agla step khud decide karta hai — sab autonomous.
 
 ---
 
-### 📹 Video 2: Model Context Protocol Architecture
-
-The protocol divides responsibilities across three key layers:
+## 2. Architecture — Host, Client, Server
 
 ```
 +-------------------------------------------------------+
@@ -484,7 +496,7 @@ The protocol divides responsibilities across three key layers:
 |  |                CLIENT (MCP Connector)           |  |
 |  +-----------------------+-------------------------+  |
 +--------------------------|----------------------------+
-                           | Stdio / SSE Transport
+                           | stdio / Streamable HTTP Transport
 +--------------------------v----------------------------+
 |                       SERVER                          |
 |  +------------+   +--------------+   +-------------+  |
@@ -494,37 +506,35 @@ The protocol divides responsibilities across three key layers:
 +-------------------------------------------------------+
 ```
 
-1.  **Host:** The parent application running the AI model that controls the session (e.g., Claude Desktop, Cursor, local IDE terminal).
-2.  **Client:** The engine inside the Host that initiates connection to the server, parses its capabilities, and routes instructions.
-3.  **Server:** A lightweight, secure subprocess or remote service that exposes data and execution capabilities.
-4.  **The Three MCP Primitives:**
-    *   **Tools (LLM-Controlled):** Executable functions that the model can choose to call (e.g. `add_expense(amount, category)`). These are dynamic, modify state, and require model parameters.
-    *   **Resources (App-Controlled):** Read-only data sources (e.g., static JSON files, logs, database schemas) that are fed as context to the model.
-    *   **Prompts (User-Controlled):** Pre-written templates that can be loaded to instruct the model on specific tasks.
+1. **Host** — Parent application jo AI model chala raha hai aur session control karta hai (Claude Desktop, Cursor, IDE)
+2. **Client** — Host ke andar ka engine jo server se connection initiate karta hai, capabilities parse karta hai, instructions route karta hai
+3. **Server** — Lightweight subprocess ya remote service jo data aur execution capabilities expose karta hai
 
-*   *Hinglish:* 
-    *   **Host:** Main software jo AI model chala raha hai.
-    *   **Client:** Host ke andar ka module jo server se communication manage karta hai.
-    *   **Server:** Wo pipeline jo tools, read-only data (Resources), aur system templates (Prompts) ko expose karti hai.
+### Teen Core Primitives
+
+| Primitive | Controlled By | Kya hai | Example |
+|---|---|---|---|
+| **Tools** | LLM (model decide karta hai kab call karna hai) | Executable functions, state modify kar sakte hain, model se parameters lete hain | `add_expense(amount, category)` |
+| **Resources** | App (host decide karta hai kab load karna hai) | Read-only data sources, context ke roop mein feed hote hain | Static JSON files, logs, DB schemas |
+| **Prompts** | User (explicitly invoke karta hai) | Pre-written reusable templates | `/monthly_audit` slash command |
+
+⚠️ **CORRECTION/ADDITION**: Original notes mein sirf ye teen primitives the. Official spec mein 3 aur bhi hain jo tumhare notes mein miss the, aur ye important hain:
+- **Sampling** — server → client ko LLM completion ke liye request (Section 9 mein detail)
+- **Elicitation** — server → user se additional info maangna (Section 10 mein detail)
+- **Roots** — client server ko batata hai ki filesystem access kis directory tak limited hai
+
+*Source: [MCP Architecture Overview](https://modelcontextprotocol.io/docs/learn/architecture.md)*
 
 ---
 
-### 📹 Video 3: The MCP Lifecycle
+## 3. The Lifecycle — JSON-RPC 2.0 Handshake
 
-MCP defines a strict session lifecycle using **JSON-RPC 2.0** messages sent over Stdio or SSE transport layers.
+MCP ek strict session lifecycle follow karta hai, **JSON-RPC 2.0** messages use karke, stdio ya Streamable HTTP transport ke upar.
 
-#### 1. Handshake & Initialization Sequence
-Before any message can be processed, the client and server must agree on protocols:
-
-1.  **Initialize Request:** The client sends an `initialize` request containing:
-    *   `protocolVersion`: The MCP protocol version the client supports.
-    *   `capabilities`: Client-side capabilities (e.g., roots, sampling).
-    *   `clientInfo`: Client name and version.
-2.  **Initialize Response:** The server responds with:
-    *   `protocolVersion`: The version it agrees to use.
-    *   `capabilities`: Server capabilities (e.g., listing tools, resources, prompts).
-    *   `serverInfo`: Server details.
-3.  **Initialized Notification:** The client sends a one-way notification indicating that the handshake is complete and the active session has started.
+### Handshake Sequence
+1. **Initialize Request** — Client bhejta hai: `protocolVersion`, `capabilities` (sampling, roots, elicitation), `clientInfo`
+2. **Initialize Response** — Server respond karta hai: agreed `protocolVersion`, apni `capabilities` (tools, resources, prompts listing), `serverInfo`
+3. **Initialized Notification** — Client one-way notification bhejta hai ki handshake complete hai
 
 ```
 Client                                                   Server
@@ -536,93 +546,109 @@ Client                                                   Server
   | ================== ACTIVE SESSION ==================== |
 ```
 
-#### 2. Active Session Operations
-*   **Listing Tools:** Client queries `tools/list` to find out what the server can do.
-*   **Calling Tools:** Client invokes a tool using `tools/call` with parameters.
+### Active Session Operations
+- `tools/list` — available tools discover karna
+- `tools/call` — tool invoke karna with parameters
 
-#### 3. Shutdown Sequence
-*   **Shutdown Request:** Client sends `shutdown` request to gracefully stop operations.
-*   **Exit Notification:** Client sends `exit` to terminate the subprocess.
+### Shutdown Sequence
+`shutdown` request → `exit` notification → subprocess terminate
 
-#### 4. JSON-RPC 2.0 Message Schema
-*   **Request Packet:**
-    ```json
-    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "add_expense", "arguments": {"amount": 500, "category": "Food"}}}
-    ```
-*   **Response Packet:**
-    ```json
-    {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "Expense added successfully."}]}}
-    ```
+### JSON-RPC 2.0 Message Schema
+```json
+// Request
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "add_expense", "arguments": {"amount": 500, "category": "Food"}}}
 
-*   *Hinglish:* Client aur Server ke beech har request aur response **JSON-RPC 2.0** format me hota hai. Connection start hone par pehle handshake hota hai (`initialize` $\rightarrow$ `initialized`), fir active conversation chalti hai, aur last me `shutdown` request bhej kar connection close kiya jata hai.
+// Response
+{"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "Expense added successfully."}]}}
+```
+
+⚠️ **IMPORTANT FUTURE UPDATE**: Naye `2026-07-28` spec mein ye poora session-based lifecycle (`initialize` handshake + persistent `Mcp-Session-Id`) hat raha hai — protocol **stateless** ho raha hai, har request self-contained hoga. Ye abhi future/draft hai, current stable spec mein upar wala flow hi sahi hai — but isko dhyan mein rakhna, kyunki jab tum job join karoge tak ye shayad shipped ho chuka ho.
+
+*Source: [MCP Lifecycle Spec](https://modelcontextprotocol.io/specification/), [2026-07-28 RC](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)*
 
 ---
 
-### 📹 Video 4: How to connect MCP Servers to Claude Desktop
+## 4. Connecting MCP Servers to Claude Desktop
 
-Local MCP servers run as **subprocesses** managed directly by the Host. To connect your server to **Claude Desktop**, you must configure it in the host configuration file.
-
-*   **Config Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json` (Windows) / `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS).
-*   **Configuration Layout:**
+### Config Path
+| OS | Path |
+|---|---|
+| Windows | `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json` |
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Linux | `~/.config/claude-desktop/claude_desktop_config.json` |
 
 ```json
 {
   "mcpServers": {
     "my-local-tracker": {
       "command": "python",
-      "args": [
-        "c:/ace/lvlup/projects/expense_tracker.py"
-      ],
-      "env": {
-        "DB_PATH": "c:/ace/lvlup/projects/expenses.db"
-      }
+      "args": ["c:/ace/lvlup/projects/expense_tracker.py"],
+      "env": { "DB_PATH": "c:/ace/lvlup/projects/expenses.db" }
     }
   }
 }
 ```
 
-#### 🛠️ Official Prebuilt Server Configurations
-You can connect prebuilt, official MCP servers directly in your `claude_desktop_config.json` using `npx`:
+### ⚠️ CORRECTION: Prebuilt Official Servers — Kaafi Sab Ab DEPRECATED Hain
 
-1.  **GitHub Server (Search, Issues, PRs):**
-    ```json
+Original notes mein GitHub aur Postgres official servers ka example diya gaya tha `@modelcontextprotocol/server-github` aur `@modelcontextprotocol/server-postgres` se. **Ye dono ab archived hain** — Anthropic ne reference servers ka bada hissa deprecate kar diya:
+
+> **`@modelcontextprotocol/server-postgres` — deprecated as of July 10, 2025**, archived on GitHub/NPM/Docker Hub. Isme ek real **SQL injection vulnerability** bhi mili thi — read-only transaction wrapper bypass ho sakta tha, jisse arbitrary write queries execute ho sakti thi. Deprecated hone ke baad bhi ~21,000 weekly downloads ho rahe hain — **iska matlab production mein log ab bhi vulnerable version use kar rahe hain.** Ye ek zabardast real-world security case study hai jo tumhare AI Security topic ke liye directly relevant hai.
+
+> `@modelcontextprotocol/server-github` bhi archived list mein hai. GitHub integration ka current recommended tareeka hai official hosted remote server: `https://api.githubcopilot.com/mcp/` (HTTP-based, OAuth se secure).
+
+> **`mcp-server-sqlite` (notes ke Video 4 mein prebuilt example ke roop mein diya gaya) bhi archived hai** — aur isme bhi Postgres jaisa hi **unpatched SQL injection vulnerability** hai. Ye server 5,000+ baar fork ho chuka hai archival se pehle, matlab ye vulnerable code ab bhi hazaaron downstream agents ke andar silently exist karta hai — abhi bhi ~13K weekly PyPI downloads ho rahe hain. Iska koi security patch nahi aayega kyunki repo hi archived hai. (Note: ye us `sqlite` reference server ki baat hai jo `npx`/`uvx` se directly install hota hai — tumhare Video 5 ka khud-bana hua `fastmcp` SQLite server isse alag hai, wo apna khud ka code hai, but usme bhi tumne khud SQL injection se bachne ke liye parameterized queries use ki hain, jo achhi practice hai.)
+
+**Ab kya use karo (current, maintained servers):**
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"]
+    },
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "path/to/git/repo"]
+    },
     "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "your_github_token"
-      }
-    }
-    ```
-2.  **PostgreSQL Server (Query and inspect DB):**
-    ```json
-    "postgres": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:pass@localhost:5432/dbname"]
-    }
-    ```
-3.  **Fetch Server (Web scraping & markdown conversion):**
-    ```json
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/"
+    },
     "fetch": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-fetch"]
     }
-    ```
-4.  **SQLite Server:**
-    ```json
-    "sqlite": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sqlite", "--db-path", "c:/ace/lvlup/projects/expenses.db"]
-    }
-    ```
+  }
+}
+```
 
-*   *Hinglish:* Local ya official prebuilt servers (GitHub, Postgres, SQLite, Fetch) ko run karne ke liye Claude Desktop background me python ya Node/npx command execute karta hai. Iska configuration path `claude_desktop_config.json` hota hai jahan command, parameters, aur environment variables specified hote hain.
+Postgres ke liye ab **Google ka open-source "MCP Toolbox for Databases"** ya production-grade community forks (jaise Zed Industries ka patched fork) recommend kiye jaate hain — deprecated reference server production mein kabhi mat use karna.
+
+*Source: [servers-archived repo](https://github.com/modelcontextprotocol/servers-archived), [Datadog SQL injection case study](https://securitylabs.datadoghq.com/articles/mcp-vulnerability-case-study-SQL-injection-in-the-postgresql-mcp-server/), [official servers repo](https://github.com/modelcontextprotocol/servers)*
 
 ---
 
-### 📹 Video 5: How to Build Local MCP Servers (SQLite Expense Tracker)
+## 5. Building Local MCP Servers (Python + `fastmcp`)
 
-Here is a complete, production-ready implementation of a local MCP server that stores data in an SQLite database using Python and `FastMCP`.
+**Library confirm ki hai:** standalone `fastmcp` (PrefectHQ/jlowin maintained), currently **v3.x**, jo ~70% MCP servers (all languages combined) power karta hai — sabse popular choice hai.
+
+```bash
+pip install fastmcp --break-system-packages
+```
+
+⚠️ **ZAROORI CLARIFICATION jo notes mein missing thi**: Do alag "FastMCP" exist karte hain, confuse mat hona:
+
+| | Standalone `fastmcp` (jo hum use kar rahe hain) | Built-in `mcp.server.fastmcp` |
+|---|---|---|
+| Maintainer | PrefectHQ / Jeremiah Lowin | Anthropic (official `mcp` SDK ka hissa) |
+| Version | v3.x (GA — Feb 2026) | v1.x (stable, **maintenance mode** — naye features nahi) |
+| Import | `from fastmcp import FastMCP` | `from mcp.server.fastmcp import FastMCP` |
+| Status | Actively developed, most features | v2.0 mein rename ho raha hai `MCPServer` mein |
+
+Tumhare notes mein `from fastmcp import FastMCP` diya gaya hai — ye **standalone package** hai, jo sahi choice hai for active development.
+
+### Complete SQLite Expense Tracker Example
 
 ```python
 import sqlite3
@@ -630,15 +656,12 @@ import os
 import sys
 from fastmcp import FastMCP
 
-# Ensure UTF-8 output encoding on Windows
 sys.stdout.reconfigure(encoding='utf-8')
 
-# Initialize FastMCP Server
 mcp = FastMCP("SQLite Expense Tracker")
 DB_FILE = os.environ.get("DB_PATH", "expenses.db")
 
 def init_db():
-    """Initializes SQLite database and tables."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
@@ -653,7 +676,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize DB on startup
 init_db()
 
 # --- 1. TOOLS (LLM-Controlled) ---
@@ -679,9 +701,7 @@ def add_expense(amount: float, category: str, description: str) -> str:
 
 @mcp.tool()
 def get_expenses(category: str = None) -> str:
-    """
-    Retrieves expenses. Optionally filters by category.
-    """
+    """Retrieves expenses. Optionally filters by category."""
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -691,12 +711,9 @@ def get_expenses(category: str = None) -> str:
             cursor.execute("SELECT amount, category, description, date FROM expenses")
         rows = cursor.fetchall()
         conn.close()
-
         if not rows:
             return "No expenses found."
-        
-        output = ["Amount | Category | Description | Date"]
-        output.append("-" * 50)
+        output = ["Amount | Category | Description | Date", "-" * 50]
         for r in rows:
             output.append(f"INR {r[0]} | {r[1]} | {r[2]} | {r[3]}")
         return "\n".join(output)
@@ -705,21 +722,16 @@ def get_expenses(category: str = None) -> str:
 
 @mcp.tool()
 def get_expense_summary() -> str:
-    """
-    Returns aggregated expenses grouped by category.
-    """
+    """Returns aggregated expenses grouped by category."""
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("SELECT category, SUM(amount) FROM expenses GROUP BY category")
         rows = cursor.fetchall()
         conn.close()
-
         if not rows:
             return "No summary data available."
-        
-        output = ["Category | Total Amount"]
-        output.append("-" * 30)
+        output = ["Category | Total Amount", "-" * 30]
         for r in rows:
             output.append(f"{r[0]} | INR {r[1]:.2f}")
         return "\n".join(output)
@@ -730,49 +742,42 @@ def get_expense_summary() -> str:
 
 @mcp.resource("categories://list")
 def list_categories() -> str:
-    """
-    Returns the list of valid categories allowed by the system.
-    """
+    """Returns the list of valid categories allowed by the system."""
     return '["Food", "Travel", "Software", "Rent", "Utilities"]'
 
 # --- 3. PROMPTS (Templates) ---
 
 @mcp.prompt()
 def monthly_audit(month: str) -> str:
-    """
-    Generates a prompt template for inspecting financial leaks.
-    """
+    """Generates a prompt template for inspecting financial leaks."""
     return f"Identify saving opportunities by auditing all expense summaries in detail for the month of {month}."
 
 if __name__ == "__main__":
     mcp.run()
 ```
 
+> **Note on decorator syntax:** Naye `fastmcp` v3.x docs mein `@mcp.tool` (bina parentheses) bhi valid hai, `@mcp.tool()` bhi chalta hai — dono kaam karte hain, ye sirf style preference hai.
+
+*Source: [fastmcp PyPI](https://pypi.org/project/fastmcp/), [FastMCP 3.0 announcement](https://jlowin.dev/blog/fastmcp-3)*
+
 ---
 
-### 📹 Video 6: How to Build & Deploy Remote MCP Servers (SSE Transport)
+## 6. Building & Deploying Remote MCP Servers
 
-#### 1. Why Stdio fails in Cloud Environments
-Stdio requires the Client to start the Server as a direct local child process. For cloud-hosted servers (e.g. running on AWS, Render, or FastMCP Cloud), there is no shared Stdio pipe. We must use a web-based transport: **Server-Sent Events (SSE)**.
+### ⚠️ CORRECTION: SSE Ab Fully Legacy Hai, Sirf "Note" Nahi
 
-```
-Client                                                   Server (Cloud)
-  |                                                        |
-  | === GET /sse (Establishes EventStream connection) ===> | (Keeps connection open)
-  | <== Streams server capabilities / handshake events ==== |
-  |                                                        |
-  | === POST /messages (Sends JSON-RPC payload) =========> | (Executes tool logic)
-```
+Original notes mein SSE ko main approach ki tarah dikhaya gaya tha with a small note about deprecation. Reality thoda stronger hai: **SSE `2025-03-26` spec se hi deprecated hai** (legacy status), aur naye projects ke liye isse start karna hi nahi chahiye. Direct **Streamable HTTP** se shuru karo.
 
-#### 2. Production FastAPI Integration Implementation
-Modern FastMCP servers can be mounted directly into FastAPI applications as standard ASGI sub-applications without manual transport management:
+### Why Stdio Cloud Mein Fail Karta Hai
+Stdio ko client ko server ka direct child process start karna padta hai. Cloud-hosted servers (AWS, Render) ke liye shared stdio pipe nahi hoti — isliye web-based transport chahiye.
+
+### Production FastAPI + Streamable HTTP Integration
 
 ```python
 from fastapi import FastAPI
 from fastmcp import FastMCP
 import uvicorn
 
-# Initialize FastMCP instance using the modern high-level class
 mcp = FastMCP("Production Remote DB")
 
 @mcp.tool()
@@ -782,29 +787,42 @@ def read_user_count() -> int:
 
 app = FastAPI()
 
-# Mount FastMCP directly inside FastAPI using http_app()
+# Streamable HTTP mount — recommended approach, SSE nahi
 app.mount("/mcp", mcp.http_app())
 
 if __name__ == "__main__":
-    # Start ASGI server using uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-To start this server:
 ```bash
-uv run uvicorn run_sse_server:app --host 0.0.0.0 --port 8000
+uv run uvicorn run_server:app --host 0.0.0.0 --port 8000
 ```
 
-> [!NOTE]
-> **SSE vs Streamable HTTP:** In the latest MCP specification, SSE has been marked as legacy/deprecated. The modern recommended transport is **Streamable HTTP** (run via `transport="http"` or by mounting `mcp.streamable_http_app()` inside FastAPI/Starlette).
+Client isse connect karega `http://localhost:8000/mcp` pe — single HTTPS endpoint, POST for JSON-RPC requests, optional GET for streaming.
 
-*   *Hinglish:* Cloud hosting ke case mein stdio streams use nahi ho sakti, isliye hum HTTP/SSE protocol use karte hain. Client `/sse` end-point par ek steady GET connection stream open rakhta hai aur commands ko `/messages` end-point par POST requests ke form mein bhejta hai. Modern applications mein SSE ki jagah **Streamable HTTP** (`transport="http"`) use karne ki advice di jaati hai.
+### Authentication for Production (naya addition — notes mein missing tha)
+Remote server ko production mein deploy karte waqt bina auth ke chodna khatarnak hai (Section 12 dekho SSRF/token risks ke liye). `fastmcp` mein JWT-based auth easily add ho sakta hai:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import JWTVerifier
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
+
+# Development/testing ke liye — production mein proper KMS/secrets manager use karo
+key_pair = RSAKeyPair.generate()
+access_token = key_pair.create_token(audience="my-server")
+
+auth = JWTVerifier(public_key=key_pair.public_key, audience="my-server")
+mcp = FastMCP(name="Production Remote DB", auth=auth)
+```
+
+*Source: [FastMCP Anthropic integration guide](https://gofastmcp.com/integrations/anthropic)*
 
 ---
 
-### 📹 Video 7: How to Build Custom MCP Clients
+## 7. Building Custom MCP Clients (LangChain + LangGraph)
 
-To use an MCP server programmatically in python (e.g., inside LangGraph or LangChain), you write a custom client that connects to the server process, discovers its schemas, and exposes them as tools.
+Confirm kiya gaya approach: `langchain-mcp-adapters` ka `MultiServerMCPClient`.
 
 ```python
 import asyncio
@@ -813,11 +831,10 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
-# Ensure UTF-8 output encoding
 sys.stdout.reconfigure(encoding='utf-8')
 
 async def main():
-    # 1. Define Server configurations (stdio transport)
+    # 1. Server configurations (stdio transport)
     server_config = {
         "expense-tracker": {
             "transport": "stdio",
@@ -827,16 +844,15 @@ async def main():
         }
     }
 
-    # 2. Establish connection using the official MultiServerMCPClient
+    # 2. Connection establish karo
     async with MultiServerMCPClient(server_config) as client:
-        # Get all tools aggregated from connected MCP servers
+        # Saare tools LangChain-compatible tools mein convert ho jaate hain
         langchain_tools = await client.get_tools()
 
-        # 3. Create LangGraph ReAct agent
+        # 3. LangGraph ReAct agent banao
         model = ChatOpenAI(model="gpt-4o")
         agent = create_react_agent(model, tools=langchain_tools)
 
-        # Test Query
         inputs = {"messages": [("user", "Add an expense of 450 INR for Pizza under Food category.")]}
         result = await agent.ainvoke(inputs)
         print("Response:", result["messages"][-1].content)
@@ -845,50 +861,307 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-*   *Hinglish:* Custom client likhne ke liye hum `langchain-mcp-adapters` library ka `MultiServerMCPClient` class use karte hain. Server configurations define karke connection open karte hain aur `client.get_tools()` call karke saare tools ko direct standard LangChain tools me convert karke LangGraph ReAct agent ko de dete hain. Isme low-level `mcp` library ko manually load karne ki koi zaroorat nahi hoti.
+`langchain-mcp-adapters` low-level `mcp` library ko manually load karne ki zaroorat nahi deta — `client.get_tools()` seedha standard LangChain tools de deta hai, jo kisi bhi LangGraph/LangChain agent mein directly plug ho jate hain. Multiple servers ek saath configure kar sakte ho `server_config` dict mein multiple entries daal ke — client automatically saare servers se tools aggregate kar lega.
 
 ---
 
-### 📹 Video 8: Claude Code & MCP Integration
+## 8. Claude Code & MCP Integration
 
-**Claude Code** is Anthropic's agentic CLI tool designed for developers. It supports running MCP servers directly in the terminal workspace.
+**Claude Code** Anthropic ka agentic CLI tool hai jo terminal mein MCP servers run kar sakta hai.
 
-#### 1. Configuration Setup
-Unlike Claude Desktop, Claude Code stores its settings in your user home directory:
-*   **Path:** `~/.claude/config.json`
-*   **Structure:**
+### ⚠️ CORRECTION: Config Path Galat Tha Notes Mein
+
+Notes mein diya gaya tha: `~/.claude/config.json` — **ye galat path hai.**
+
+**Sahi paths (verified from official docs):**
+
+| File | Kya store hota hai |
+|---|---|
+| `~/.claude.json` (dot-file, `.claude/` folder ke **andar nahi**, uske bahar) | User + local scope MCP servers, OAuth session, per-project state |
+| `.mcp.json` (project root mein) | Project-scoped MCP servers — team ke saath git mein commit ho sakta hai |
+| `~/.claude/settings.json` | General global settings (permissions, hooks, model) — MCP servers yahan **nahi** hote |
 
 ```json
+// ~/.claude.json ya .mcp.json mein
 {
   "mcpServers": {
     "file-management": {
       "command": "node",
       "args": ["/path/to/mcp-server-filesystem/dist/index.js"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/"
     }
   }
 }
 ```
 
-#### 2. Security Permission Modes (Allow, Deny, Ask)
-Since Claude Code operates directly on your local system, it executes tools with a strict security model based on user permissions:
-1.  **Allow (Auto-run):** Safe tools (like reading a file or searching a database) run automatically.
-2.  **Deny:** Blocked tools will fail immediately.
-3.  **Ask (Human-in-the-loop):** Destructive actions (modifying code files, deleting databases, running arbitrary bash scripts) trigger a prompt in the terminal asking the user for explicit confirmation before executing the tool.
+Debug karne ke liye: `/mcp` command Claude Code session ke andar, ya terminal se `claude mcp list` / `claude mcp test <name>`.
 
-#### 3. Debugging with MCP Inspector
-The **MCP Inspector** is an interactive, GUI-based playground built by Anthropic to test your servers completely isolated from Claude.
+### Security Permission Modes (Allow, Deny, Ask)
+1. **Allow (Auto-run)** — safe tools (read file, search DB) automatically run
+2. **Deny** — blocked tools immediately fail
+3. **Ask (Human-in-the-loop)** — destructive actions (file modify, DB delete, arbitrary bash) confirmation maangte hain
 
-*   **How to run (Stdio Server):**
-    ```bash
-    npx @modelcontextprotocol/inspector python expense_tracker.py
-    ```
-*   This command starts the server process, injects a proxy client, and launches a web browser UI at `http://localhost:5173`.
-*   Inside the GUI, you can:
-    *   Inspect exposed **Tools** and execute them manually with JSON arguments.
-    *   View active **Resources** context templates.
-    *   Trigger **Prompts** and see the generated messages.
+Permission rules order mein evaluate hote hain: **deny rules pehle, phir ask, phir allow** — pehla match hi final decide karta hai.
 
-*   *Hinglish:* Claude Code CLI settings file `~/.claude/config.json` mein store hoti hain. Kisi bhi MCP server ko test aur debug karne ke liye hum **MCP Inspector** tool use karte hain: `npx @modelcontextprotocol/inspector <command> <args>`. Yeh local host `http://localhost:5173` par ek web GUI khol deta hai jahan tools aur parameters directly test ho sakte hain.
+### Debugging with MCP Inspector
+```bash
+npx @modelcontextprotocol/inspector python expense_tracker.py
+```
+Ye command server process start karta hai, proxy client inject karta hai, aur `http://localhost:5173` pe web GUI khol deta hai — tools, resources, prompts sab manually test kar sakte ho.
+
+*Source: [Claude Code Settings Docs](https://code.claude.com/docs/en/settings), [Inventive HQ config guide](https://inventivehq.com/knowledge-base/claude/where-configuration-files-are-stored)*
+
+---
+
+## 9. Advanced Feature: SAMPLING
+
+### Kya hai
+Sampling MCP server ko allow karta hai ki wo **client se LLM completion maang sake** — bina apni khud ki API key rakhe.
+
+### Kaise kaam karta hai
+1. Client `initialize` ke time `sampling` capability declare karta hai
+2. Server `sampling/createMessage` request bhejta hai:
+```json
+{
+  "method": "sampling/createMessage",
+  "params": {
+    "messages": [{ "role": "user", "content": { "type": "text", "text": "What is the capital of France?" } }],
+    "modelPreferences": {
+      "hints": [{ "name": "claude-3-sonnet" }],
+      "intelligencePriority": 0.8,
+      "speedPriority": 0.5
+    },
+    "systemPrompt": "You are a helpful assistant.",
+    "maxTokens": 100
+  }
+}
+```
+3. Client-User ke beech **human-in-the-loop review** hota hai — request edit/approve/reject ho sakti hai
+4. Approve hone ke baad LLM ko forward, response wapas server ko
+
+### Model Preferences System
+- **costPriority / speedPriority / intelligencePriority** (0-1 scale)
+- **hints** — specific model names, advisory only, client final decision leta hai
+
+### `fastmcp` mein Sampling ka Practical Use
+```python
+@mcp.tool()
+async def summarize_text(text: str, ctx: Context) -> str:
+    """Summarizes text using the client's LLM via sampling — no API key needed on server."""
+    result = await ctx.session.create_message(
+        messages=[{"role": "user", "content": {"type": "text", "text": f"Summarize: {text}"}}],
+        max_tokens=200
+    )
+    return result.content.text
+```
+
+### ⚠️ IMPORTANT: Sampling Deprecated in 2026-07-28 Spec
+Naye release candidate mein Sampling **deprecated** hai. Official replacement recommendation: **"Direct integration with LLM provider APIs"**. Methods kaam karte rahenge ~1 saal (backward compat), lekin naye projects ke liye ye "legacy pattern" ban chuka hai.
+
+*Source: [Sampling Spec](https://modelcontextprotocol.info/specification/draft/client/sampling), [Tech Insider FastMCP tutorial](https://tech-insider.org/mcp-server-tutorial-python-fastmcp-claude-2026/)*
+
+---
+
+## 10. Advanced Feature: ELICITATION
+
+### Kya hai
+Server ko allow karta hai ki wo **user se dynamically additional info maang sake**, tool call ke beech mein pause karke. Introduced `2025-06-18`.
+
+**Real example:** Support-agent MCP server case create kar raha hai, email se koi user match nahi ho raha. Server abort karne ke bajaye elicitation use karke sahi email maang leta hai.
+
+### Do Modes
+
+**A. Form Mode** — structured data collection, flat JSON Schema (nested objects support nahi karta — jaan-boojh kar simple rakha gaya):
+```python
+@mcp.tool()
+async def get_flight_status(ctx: Context) -> str:
+    """Get live flight status by collecting flight number interactively."""
+    result = await ctx.elicit(
+        message="Please provide the flight number you want to check",
+        response_type=FlightInfo  # dataclass with schema
+    )
+    if result.action == "decline":
+        return "Flight number not provided"
+    elif result.action == "cancel":
+        return "Operation cancelled"
+    return f"Checking status for {result.data.flight_number}..."
+```
+
+**B. URL Mode** (introduced `2025-11-25`) — sensitive info (password, API key, payment info) ke liye. Server ek external secure URL deta hai jo **MCP client se completely bypass** ho jata hai.
+
+> **Servers MUST NOT** form mode se sensitive info maangein. **MUST** use URL mode.
+
+### Response ka Three-Action Model
+1. **accept** — data submit hua
+2. **decline** — explicitly reject kiya
+3. **cancel** — dialog band kiya bina choice ke
+
+### Security — Phishing Attack Pattern (Critical)
+1. Malicious "Alice" benign server pe elicitation trigger karta hai
+2. Server authorization URL generate karta hai
+3. Alice us URL ko victim "Bob" ko forward kar deta hai
+4. Bob click karta hai sochte hue ki khud ka account authorize kar raha hai
+5. Tokens Alice ki identity se bind ho jate hain instead of Bob's → **account takeover**
+
+**Client-side URL handling rules (strict):**
+- URL pre-fetch mat karo
+- Explicit consent ke bina open mat karo
+- Poora URL dikhao review ke liye
+- Secure browser view use karo (iOS: SFSafariViewController haan, WkWebView nahi — client/LLM content inspect kar sakta hai)
+- Domain highlight karo (subdomain spoofing se bachne ke liye)
+
+*Source: [Elicitation Spec](https://modelcontextprotocol.io/specification/draft/client/elicitation), [The New Stack elicitation tutorial](https://thenewstack.io/how-to-implement-elicitation-with-model-context-protocol/)*
+
+---
+
+## 11. AUTHENTICATION & AUTHORIZATION
+
+MCP authorization protocol-level pe **optional** hai, lekin remote (HTTP) servers ke liye **strongly recommended**. Stdio (local) transport ke liye protocol apply nahi hota — environment variables se credentials milte hain.
+
+### Roles (OAuth 2.1 terminology)
+- **MCP Server** = OAuth 2.1 Resource Server
+- **MCP Client** = OAuth 2.1 Client
+- **Authorization Server** = user authenticate karta hai, tokens issue karta hai
+
+### Poora Flow
+1. Client bina token ke request bhejta hai
+2. Server `401` return karta hai with `WWW-Authenticate` header (`resource_metadata` URL ke saath)
+3. Client Protected Resource Metadata fetch karta hai (RFC 9728) — konsa auth server use karna hai
+4. Authorization server metadata discover hoti hai
+5. Client ID chahiye — 3 tareeke: Client ID Metadata Documents (naya, preferred), Pre-registration, Dynamic Client Registration (deprecated now, backward compat ke liye)
+6. PKCE parameters generate, browser mein authorization URL khulti hai (with `resource` parameter)
+7. User authorize karta hai
+8. Code + `iss` parameter ke saath redirect (mix-up attacks rokne ke liye — RFC 9207)
+9. Code → token exchange
+10. `Authorization: Bearer <token>` header se requests
+
+### Scope Management
+- **Least privilege** follow karo
+- **Step-Up Authorization**: extra permission chahiye to `403` + `insufficient_scope` → naya scope maang ke re-authorize (purane scopes lose nahi hone chahiye, union hota hai)
+
+### `fastmcp` mein Production OAuth Setup
+```python
+from fastmcp.server.auth import JWTVerifier
+
+auth = JWTVerifier(
+    public_key=your_auth_server_public_key,
+    audience="your-mcp-server-uri",
+    issuer="https://your-auth-server.com"
+)
+mcp = FastMCP("Production Server", auth=auth)
+```
+Production mein khud ka OAuth authorization server likhna multi-month project hai — **existing provider use karo** (Auth0, Curity, WorkOS, etc.) aur apne server ko sirf tokens validate karne do.
+
+*Source: [Authorization Spec](https://modelcontextprotocol.io/specification/draft/basic/authorization), [Prefect MCP OAuth guide](https://www.prefect.io/resources/mcp-oauth)*
+
+---
+
+## 12. AI/MCP SECURITY — Deep Dive 
+
+### A. Confused Deputy Problem
+Proxy server static client ID use karta hai third-party auth server ke saath → attacker consent-cookie exploit karke authorization code chura sakta hai bina consent ke.
+**Fix**: per-client consent registry, third-party flow se pehle check.
+
+### B. Token Passthrough (Explicitly FORBIDDEN)
+Server client ka token bina validate kiye downstream API ko forward kar deta hai.
+**Rule**: MCP servers MUST NOT accept tokens jo unke liye explicitly issue nahi hue.
+
+### C. SSRF (Server-Side Request Forgery)
+OAuth metadata discovery ke dauran malicious server internal IPs, cloud metadata endpoints (`169.254.169.254`), ya localhost services ki URLs de sakta hai.
+**Fix**: HTTPS enforce, private IP ranges block, egress proxy.
+
+### D. Session Hijacking
+Attacker session ID guess/steal karke prompt injection ya impersonation kar sakta hai.
+**Fix**: session ko authentication ke liye use mat karo, session ID ko user identity se bind karo.
+
+### E. Local MCP Server Compromise (Real Case Study — Postgres server dekho Section 4)
+`npx`-installed servers full system access rakhte hain, malicious startup commands embed ho sakte hain.
+**Fix**: pre-configuration consent dialog, sandboxing.
+
+### F. OAuth URL Injection (XSS/RCE)
+Malicious server `javascript:` URL de sakta hai. `window.open()` mein direct daalne se XSS.
+**Fix**: sirf `http/https` schemes allow karo.
+
+### G. Scope Minimization
+Broad scopes upfront grant karna risky hai — token leak hone pe blast radius bada.
+**Fix**: incremental/progressive scope elevation.
+
+### H. MCP Top 10 — High-Level Categories (Cloud Security Alliance)
+1. Prompt Injection & Manipulation
+2. Tool Poisoning & Metadata Attacks (rug-pull — approval ke baad tool definition change)
+3. Data Exfiltration & Credential Theft
+4. Command & Code Injection
+5. Authentication & Authorization failures
+6. Supply Chain & Dependencies (malicious packages, typosquatting)
+7. Context Manipulation
+8. Protocol Vulnerabilities
+9. Privilege & Access Control (sandbox escape)
+10. AI-Specific Vulnerabilities
+
+### Real-World Case Study: Postgres AND SQLite Reference Servers — Dono Mein SQL Injection
+Ye do concrete examples hain jo poori tarah illustrate karte hain kyun security matter karti hai — aur ye koincidence nahi hai ki dono database-related reference servers mein same class ki vulnerability nikli:
+
+**Postgres MCP server:**
+- Reference implementation ek read-only transaction wrapper use karta tha SQL queries ke around, taaki writes na ho sakein
+- Vulnerability: attacker is wrapper ko bypass kar sakta tha, arbitrary write operations execute kar sakta tha
+- Deprecated hone ke baad bhi **21,000+ weekly NPM downloads**
+
+**SQLite MCP server:**
+- Anthropic ka apna official reference server tha, database query/write/inspect ke liye
+- **Unpatched SQL injection vulnerability** — kabhi bhi fix nahi hui kyunki repo archive ho gaya
+- Archival se pehle **5,000+ baar fork** ho chuka tha — matlab ye vulnerable code ab hazaaron downstream agents ke andar silently exist karta hai, kai production mein bhi
+- Abhi bhi ~13,000 weekly PyPI downloads
+
+**Bigger pattern (Akamai ke research ke mutabiq)**: MCP servers mein command injection vulnerabilities ka rate industry-wide bahut high hai — popular server implementations ka ek significant hissa (~43% ek study ke mutabiq) command injection se affected paya gaya.
+
+**Lesson**: "official"/"reference" label dekh ke blindly trust mat karo — deprecated status check karna zaroori hai, aur agentic tools ke liye traditional security assumptions (jaise "read-only transaction is safe") sufficient nahi hote. Agar tum khud koi database-connecting MCP server banao (jaisa tumne Video 5 mein SQLite expense tracker banaya), **hamesha parameterized queries use karo** (jo tumhare original code mein already sahi tarike se kiya gaya tha — `cursor.execute("... VALUES (?, ?, ?)", (amount, category, description))` — ye SQL injection se bachata hai kyunki values query string mein directly concatenate nahi hoti).
+
+*Source: [MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices), [Datadog Postgres case study](https://securitylabs.datadoghq.com/articles/mcp-vulnerability-case-study-SQL-injection-in-the-postgresql-mcp-server/), [MCP Security Project (CSA)](https://modelcontextprotocol-security.io/)*
+
+---
+
+## 13. Where MCP is Heading — 2026-07-28 Release
+
+Sirf feature-level updates nahi, poore protocol ka architecture change ho raha hai:
+- **Stateless Core** — `initialize` handshake aur session IDs hat rahe hain, har request self-contained
+- **Extensions Framework** — naye features (MCP Apps — server-rendered UI) core spec se bahar, alag extensions ke through
+- **Deprecations**: Sampling, Roots, Logging (~1 saal backward compat)
+- **Full JSON Schema 2020-12** for tool inputs/outputs
+
+---
+
+## Quick Reference Links
+
+| Topic | Link |
+|---|---|
+| Full Spec (latest stable) | https://modelcontextprotocol.io/specification/latest |
+| Sampling | https://modelcontextprotocol.io/specification/draft/client/sampling |
+| Elicitation | https://modelcontextprotocol.io/specification/draft/client/elicitation |
+| Authorization | https://modelcontextprotocol.io/specification/draft/basic/authorization |
+| Security Best Practices | https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices |
+| MCP Security (CSA Project) | https://modelcontextprotocol-security.io/ |
+| July 2026 Release Candidate | https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/ |
+| Official servers repo (current, maintained) | https://github.com/modelcontextprotocol/servers |
+| Archived/deprecated servers (avoid these) | https://github.com/modelcontextprotocol/servers-archived |
+| Claude Code settings docs | https://code.claude.com/docs/en/settings |
+| fastmcp docs | https://gofastmcp.com/ |
+| MCP Inspector | `npx @modelcontextprotocol/inspector <command>` |
+
+---
+
+## Summary of Corrections Made 
+
+1. ❌ `@modelcontextprotocol/server-github`, `server-postgres`, **aur `server-sqlite`** — **teeno archived/deprecated** hain, production mein use mat karo. Postgres aur SQLite dono mein **unpatched SQL injection vulnerabilities** hain (SQLite wala to 5,000+ forks mein spread ho chuka hai)
+2. ❌ Claude Code config path `~/.claude/config.json` — **galat**, sahi path `~/.claude.json` hai (project-level ke liye `.mcp.json`)
+3. ❌ Version timeline mein SSE deprecation date galat likhi thi (`2025-06-18` bola tha) — **sahi date `2025-03-26` hai**, jab Streamable HTTP introduce hui thi
+4. ⚠️ SSE transport — sirf "deprecated" note nahi, ye `2025-03-26` se hi legacy hai, naye projects Streamable HTTP se hi start karein
+5. ➕ Do "FastMCP" packages ka confusion clarify kiya (standalone vs official SDK built-in)
+6. ➕ Sampling, Elicitation, Authorization, aur Security — ye 4 poore naye sections add kiye jo original notes mein completely missing the
+7. ➕ 2026-07-28 upcoming spec release ka context add kiya — Sampling deprecation, stateless architecture shift
+8. ➕ Real-world security case studies (Postgres + SQLite SQL injection, 43% command injection stat) add kiye — ye tumhare AI Security ke agle topic ke liye directly useful hain
 
 ---
 

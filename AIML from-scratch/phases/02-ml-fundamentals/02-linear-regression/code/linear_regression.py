@@ -51,6 +51,7 @@ class LinearRegression:
 
     def r_squared(self, X, y):
         predictions = self.predict(X)
+        
         y_mean = sum(y) / len(y)
         ss_res = sum((actual - pred) ** 2 for actual, pred in zip(y, predictions))
         ss_tot = sum((actual - y_mean) ** 2 for actual in y)
@@ -79,6 +80,7 @@ class LinearRegressionNormal:
         self.w = numerator / denominator
         self.b = y_mean - self.w * x_mean
         return self
+
 
     def predict(self, X):
         return [self.w * x + self.b for x in X]

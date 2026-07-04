@@ -120,7 +120,7 @@ What if the relationship is not linear? You can still use linear regression by c
 y = w1*x + w2*x^2 + w3*x^3 + b
 ```
 
-This is still "linear" regression because the model is linear in the weights (w1, w2, w3). You are just using nonlinear features of x.
+This is still "linear" regression because the model is linear in the weights (w1, w2, w3). You are just using nonlinear features of x. 
 
 Higher-degree polynomials can fit more complex curves but risk overfitting. A degree-10 polynomial will pass through every point in a 10-point dataset but predict poorly on new data.
 

@@ -255,6 +255,7 @@ progress.log
 storage_state.json
 
 # Untracked Course Repositories
+career-ops/
 
 # Redis binaries
 redis/

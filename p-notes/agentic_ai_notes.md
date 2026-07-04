@@ -1101,6 +1101,12 @@ Broad scopes upfront grant karna risky hai — token leak hone pe blast radius b
 9. Privilege & Access Control (sandbox escape)
 10. AI-Specific Vulnerabilities
 
+### I. Server Authenticity / Provenance Problem
+Abhi MCP ecosystem mein koi standard mechanism nahi hai jisse client cryptographically verify kar sake ki koi server "authentic original" hai ya modified/cloned copy. Ye tool-poisoning (rug-pull, Section H point 2) ka ek extension hai — sirf tool-definition change hi nahi, poora server hi impersonate ho sakta hai.
+**Fix (emerging, no standard yet)**: server binary/package signing, publisher verification registries.
+
+*Source: [Commvault - MCP 2.0 Explained](https://www.commvault.com/blogs/mcp-2-0-explained-securing-ai-agents-before-they-secure-themselves)*
+
 ### Real-World Case Study: Postgres AND SQLite Reference Servers — Dono Mein SQL Injection
 Ye do concrete examples hain jo poori tarah illustrate karte hain kyun security matter karti hai — aur ye koincidence nahi hai ki dono database-related reference servers mein same class ki vulnerability nikli:
 

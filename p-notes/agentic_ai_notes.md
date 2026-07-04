@@ -809,9 +809,7 @@ To use an MCP server programmatically in python (e.g., inside LangGraph or LangC
 ```python
 import asyncio
 import sys
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from langchain_mcp_adapters.tools import load_mcp_tools
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
@@ -819,36 +817,35 @@ from langgraph.prebuilt import create_react_agent
 sys.stdout.reconfigure(encoding='utf-8')
 
 async def main():
-    # 1. Server startup parameters
-    server_params = StdioServerParameters(
-        command="python",
-        args=["c:/ace/lvlup/projects/expense_tracker.py"],
-        env={"DB_PATH": "expenses.db"}
-    )
+    # 1. Define Server configurations (stdio transport)
+    server_config = {
+        "expense-tracker": {
+            "transport": "stdio",
+            "command": "python",
+            "args": ["c:/ace/lvlup/projects/expense_tracker.py"],
+            "env": {"DB_PATH": "expenses.db"}
+        }
+    }
 
-    # 2. Establish connection to local Stdio
-    async with stdio_client(server_params) as (read_stream, write_stream):
-        async with ClientSession(read_stream, write_stream) as session:
-            # Protocol Handshake
-            await session.initialize()
-            
-            # 3. Load MCP tools as LangChain tools using the official adapter
-            langchain_tools = await load_mcp_tools(session)
+    # 2. Establish connection using the official MultiServerMCPClient
+    async with MultiServerMCPClient(server_config) as client:
+        # Get all tools aggregated from connected MCP servers
+        langchain_tools = await client.get_tools()
 
-            # 4. Create LangGraph ReAct agent
-            model = ChatOpenAI(model="gpt-4o")
-            agent = create_react_agent(model, tools=langchain_tools)
+        # 3. Create LangGraph ReAct agent
+        model = ChatOpenAI(model="gpt-4o")
+        agent = create_react_agent(model, tools=langchain_tools)
 
-            # Test Query
-            inputs = {"messages": [("user", "Add an expense of 450 INR for Pizza under Food category.")]}
-            result = await agent.ainvoke(inputs)
-            print("Response:", result["messages"][-1].content)
+        # Test Query
+        inputs = {"messages": [("user", "Add an expense of 450 INR for Pizza under Food category.")]}
+        result = await agent.ainvoke(inputs)
+        print("Response:", result["messages"][-1].content)
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-*   *Hinglish:* Custom client likhne ke liye hum Python `mcp` SDK ki `stdio_client` and `ClientSession` use karte hain. Server connection build hone par `langchain-mcp-adapters` ki `load_mcp_tools(session)` method ka use karke direct saare tools ko standard LangChain tools me convert karke LangGraph ReAct agent ko de dete hain.
+*   *Hinglish:* Custom client likhne ke liye hum `langchain-mcp-adapters` library ka `MultiServerMCPClient` class use karte hain. Server configurations define karke connection open karte hain aur `client.get_tools()` call karke saare tools ko direct standard LangChain tools me convert karke LangGraph ReAct agent ko de dete hain. Isme low-level `mcp` library ko manually load karne ki koi zaroorat nahi hoti.
 
 ---
 
@@ -6014,228 +6011,4 @@ builder.add_conditional_edges("agent", tools_condition)
 
 ---
 *🌌 [[Home MOC]] · [[Career MOC]]*
-## Section 3: Model Context Protocol (MCP) & FastMCP
 
-The Model Context Protocol (MCP) is an open standard designed by Anthropic that allows secure, standardized, two-way communication between LLM applications (Hosts/Clients) and data sources or tools (Servers).
-
----
-
-### Core Concepts
-
-*   **Model Context Protocol (MCP)**: An open standard that acts as a universal API connector for AI. It solves the fragmentation problem of LLM integrations by standardizing how tools, prompts, and resources are exposed.
-    *   *Hinglish*: MCP ek open standard protocol hai jo AI tools ke integration ko simple banata hai. Ye AI models ke liye ek universal "USB-C port" ki tarah hai.
-*   **MCP Host**: The main application running the AI model that controls the session and orchestrates tool execution (e.g., Claude Desktop, Cursor, local IDE).
-    *   *Hinglish*: Wo main application jo AI model ko run karta hai aur tools ki execution ko control karta hai.
-*   **MCP Client**: The component inside the Host that initiates the connection to the server, queries its capabilities, and invokes tools.
-    *   *Hinglish*: Host ke andar ka connector module jo server se link build karta hai aur requests bhejta hai.
-*   **MCP Server**: A lightweight service or subprocess that exposes specific Tools, Resources, and Prompts to the Client.
-    *   *Hinglish*: Wo external backend service jo tools aur databases ko API ke through model ke liye expose karti hai.
-*   **Tools (LLM-controlled)**: Executable functions or actions that the AI model can dynamically choose to call to interact with external environments.
-    *   *Hinglish*: Functions jinhe AI model task solve karne ke liye select aur execute karta hai (e.g. database search, file writing).
-*   **Resources (App-controlled)**: Read-only data sources (logs, files, database schemas) supplied as static context to the LLM.
-    *   *Hinglish*: Read-only background files ya schemas jo model reference ke liye inspect kar sakta hai.
-*   **Prompts (User-controlled)**: Predefined prompt templates exposed by the server that users can select to configure the agent's task layout.
-    *   *Hinglish*: Pehle se likhe hue system prompts ya templates jinhe user agents configure karne ke liye select karta hai.
-
----
-
-### 🧠 First Principles: Stdio Communication & Handshake Lifecycle
-
-At the lowest level, local MCP servers communicate using **Standard Input (`sys.stdin`)** and **Standard Output (`sys.stdout`)** via **JSON-RPC 2.0** messages.
-
-```
-+-----------------------------------------------------------------------------------+
-|                            MCP HANDSHAKE & RUNTIME LIFECYCLE                      |
-+------------------------------------+----------------------------------------------+
-|             MCP Client             |                  MCP Server                  |
-|                                    |                                              |
-|  1. Send "initialize" Request  --->|                                              |
-|     (Protocol version, capabilities) |                                              |
-|                                    |<---  2. Return "initialize" Response         |
-|                                    |     (Server features, schemas)               |
-|  3. Send "initialized" Notification|                                              |
-|     (Ready to exchange messages)   |                                              |
-|  ================================== ACTIVE OPERATIONS ========================== |
-|  4. Query "tools/list" Request --->|                                              |
-|                                    |<---  5. Return tool names and Zod schemas    |
-|  6. Call "tools/call" Request  --->|                                              |
-|     (Executes Python/JS logic)     |<---  7. Return Tool Output payload           |
-|  ================================== SHUTDOWN HANDSHAKE ========================= |
-|  8. Send "shutdown" Request    --->|                                              |
-|                                    |<---  9. Return empty Response                |
-|  10. Send "exit" Notification  --->| (Process exits cleanly)                      |
-+------------------------------------+----------------------------------------------+
-```
-
-#### Low-Level JSON-RPC 2.0 Message Primitives
-1.  **Request (Requires `id`):** The client requests a tool run.
-    ```json
-    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "query_db", "arguments": {"id": 101}}}
-    ```
-2.  **Response (Matches `id`):** The server returns the tool output.
-    ```json
-    {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "Record details..."}]}}
-    ```
-3.  **Notification (No `id`):** One-way status update (e.g. `initialized`).
-    ```json
-    {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
-    ```
-
----
-
-### 💻 FastMCP Python Server Implementation
-
-`FastMCP` is a high-level wrapper around the Python MCP SDK that registers tools, resources, and prompts using decorators:
-
-```python
-import sys
-from fastmcp import FastMCP
-
-# Force UTF-8 encoding on Windows to prevent terminal output issues
-sys.stdout.reconfigure(encoding='utf-8')
-
-# 1. Initialize Server instance
-mcp = FastMCP("Database & API Specs Server")
-
-# 2. Expose a dynamic, executable Tool
-@mcp.tool()
-def search_expense_records(user_id: int, category: str = "all") -> str:
-    """
-    Search local transaction expenses. Available categories: food, travel, software.
-    """
-    # Exposing mock database query execution
-    return f"Found 2 records under '{category}' for User {user_id}: Total $45.00"
-
-# 3. Expose a read-only Resource
-@mcp.resource("docs://specifications")
-def get_api_specifications() -> str:
-    """
-    Provides API schemas and database structures to the model as static context.
-    """
-    return "Database Schema: users(id, name, email); expenses(id, user_id, amount, category);"
-
-# 4. Expose a Prompt template
-@mcp.prompt()
-def analyze_expenses_prompt(user_id: int) -> str:
-    """Pre-loaded prompt template for expense inspection."""
-    return f"Review all expense records for User {user_id} and identify saving opportunities."
-
-if __name__ == "__main__":
-    # Runs the stdio listening loop (stdin/stdout)
-    mcp.run()
-```
-
----
-
-### ⚙️ Claude Desktop Server Configuration
-
-To connect your custom MCP server to **Claude Desktop**, you must register it in your local configuration file:
-* **Path:** `C:\Users\<Username>\AppData\Roaming\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "my-expense-server": {
-      "command": "python",
-      "args": [
-        "c:/ace/lvlup/projects/mcp_server.py"
-      ],
-      "env": {
-        "MY_ENV_API_KEY": "sk-12345"
-      }
-    }
-  }
-}
-```
-
----
-
-### 🤖 Building a Custom MCP Client in LangGraph
-
-In production, you don't just connect MCP servers to Claude Desktop; you build **custom clients** that connect to multiple MCP servers, fetch their tools, and bind them into a LangGraph ReAct agent.
-
-Here is the complete implementation code for an async stdio client:
-
-```python
-import asyncio
-import sys
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
-
-# Ensure UTF-8 output encoding for local streams
-sys.stdout.reconfigure(encoding='utf-8')
-
-async def run_mcp_agent():
-    # 1. Configure Server connection parameters
-    server_params = StdioServerParameters(
-        command="python",
-        args=["c:/ace/lvlup/projects/mcp_server.py"]
-    )
-
-    # 2. Establish connection to Stdio streams
-    async with stdio_client(server_params) as (read_stream, write_stream):
-        async with ClientSession(read_stream, write_stream) as session:
-            # Execute protocol handshake
-            await session.initialize()
-            print("✅ MCP Client initialized successfully.")
-
-            # 3. Dynamic Tool Discovery
-            tools_response = await session.list_tools()
-            langchain_tools = []
-
-            for mcp_tool in tools_response.tools:
-                print(f"Discovered Tool: {mcp_tool.name}")
-                
-                # Wrap MCP tool as a LangChain-compatible tool
-                @tool(name=mcp_tool.name, description=mcp_tool.description)
-                def wrapped_tool(arguments: dict) -> str:
-                    # Execute synchronous helper running client task loop
-                    loop = asyncio.get_event_loop()
-                    result = loop.run_until_complete(
-                        session.call_tool(mcp_tool.name, arguments=arguments)
-                    )
-                    return "".join(c.text for c in result.content)
-                
-                langchain_tools.append(wrapped_tool)
-
-            # 4. Initialize LLM & Stateful Graph
-            model = ChatOpenAI(model="gpt-4o")
-            agent = create_react_agent(model, tools=langchain_tools)
-
-            # Run query
-            inputs = {"messages": [("user", "Check saving options for User 402.")]}
-            result = await agent.ainvoke(inputs)
-            print("Response:", result["messages"][-1].content)
-
-if __name__ == "__main__":
-    asyncio.run(run_mcp_agent())
-```
-
----
-
-### 🛡️ Modern 2025/2026 MCP Advancements
-
-1.  **Distributed SSE Transport (Web-Scale MCP):**
-    *   Unlike stdio which is restricted to a single host machine, SSE (Server-Sent Events) transport runs over HTTP. 
-    *   **Architecture:** The client opens an event-source GET connection to stream server-sent JSON messages, and uses POST requests to send client-side JSON-RPC payloads back to the server. This allows cloud hosts to coordinate with remote database microservices globally.
-2.  **Smithery Registry:**
-    *   Smithery has emerged as the central registry (package manager) for MCP servers. Developers can discover, download, and configure containerized/local MCP servers (e.g. Postgres, SQLite, Manim, GitHub) using a unified CLI tool.
-3.  **Sandboxing & Quarantine:**
-    *   Production setups execute untrusted third-party MCP servers inside Docker containers or secure WASM/V8 sandboxes, protecting the parent system from malicious code execution or data extraction via tool injections.
-
----
-
-### 🇮🇳 Hinglish Summary
-
-Bhaiya, MCP standard AI integrations ko replace kar raha hai. 
-1.  **Transport Layers:** Agar local app run kar rahe ho (jaise Claude Desktop/Cursor), toh standard input/output pipes ka use karke **Stdio transport** chalao. Agar server-to-server cloud connection chahiye, toh HTTP based **SSE transport** use hoga.
-2.  **Protocol Handshake:** Pehle Client `initialize` packet bhejta hai, server description schemas respond karta hai, fir dynamic `tools/list` fetch hone ke baad `tools/call` sequence start hoti hai.
-3.  **Custom Clients:** LangGraph/LangChain agents me MCP servers ko inject karne ke liye server processes connect karo, parameters extract karo, aur unhe native tools me wrap karke compile-react-agent method me pass karo.
-
----
-
-
-## Section 4: Retrieval-Augmented Generation (RAG)

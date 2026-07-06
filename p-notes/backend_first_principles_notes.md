@@ -2312,29 +2312,33 @@ Dosto, REST API Design standard rules ka set hota hai jisse systems structured d
 
 ### 🧠 First-Principles Concept
 
-#### 🗄️ What is a Database?
-At its core, a database is a persistent storage layer that allows an application to save, retrieve, update, and delete information across sessions. 
+#### 🗄️ Database & Persistence Fundamentals
+* **Persistence:** Application crash, restart, ya server shutdown hone ke baad bhi data ko safe, consistent aur same state mein store rakhne ko persistence kehte hain.
+* **RAM vs Disk Storage:**
+  * **RAM (Primary Memory):** Extreme fast (microseconds access) par costly aur volatile (temporary) hoti hai. Cache data (jaise Redis) aur active application state storage ke liye use hoti hai.
+  * **Disk (Secondary Storage - SSD/HDD):** Persistent (non-volatile), cheap aur huge capacity wali hoti hai par RAM se slow hoti hai. Traditional databases (jaise Postgres) primary data ko permanent disk-based files me store karte hain.
+* **Why not Plain Text Files?** Normal files (like `.txt`, `.csv` or `.json` on local disk) me data store karna production-scale APIs me fail ho jata hai due to:
+  1. **Parsing Overhead:** Har query ya search operation ke liye complete file ko memory me read aur parse karna padta hai. Data size badhne par sequential file reads linearly ($O(N)$) query speed slow kar dete hain.
+  2. **No Data Integrity & Type Enforcement:** Native files me datatypes (integer bounds, decimal checks, date validation, status lists) enforce nahi hote. Schema validation and cleaning application logic par burden badha deti hai.
+  3. **Concurrency & Race Conditions:** Agar ek hi millisecond me multiple users file modify karein, to OS level locks crash karte hain ya users ek doosre ka data overwrite/corrupt kar dete hain.
 
-#### ❌ Why Simple Text Files Fail for Production Backends
-If we were to store our data in raw text files (or browser local storage) on a server, we would face three major scalability barriers:
-1. **Consistency:** Raw text has no native type validation or structure. Enforcing rules (e.g. that a `price` must be a positive decimal or `status` must match an enum) at the file level is extremely difficult and error-prone.
-2. **Concurrency & Race Conditions:** In a multi-user environment, if two users attempt to write to the same text file concurrently, we either get data loss (one overwrites the other) or a performance bottleneck due to file-level locking.
-3. **Performance (Search Overhead):** To find a specific record in a text file, the operating system must read the file sequentially from disk. As the dataset grows, this operation becomes linearly slower ($O(N)$), causing high latency.
-
-#### 🗃️ Relational vs. Non-Relational & Storage Engines
-* **Relational Databases (RDBMS):** Organizes data into structured tables with fixed rows and columns. They enforce strict schemas and relational integrity through foreign keys. relational databases are mathematically structured and optimized for transaction safety (ACID), making them ideal for systems like Customer Relationship Management (CRM) tools or financial ledger platforms.
-* **Non-Relational Databases (NoSQL):** Organizes data in flexible structures (like JSON documents, key-value stores, or graph nodes) without enforcing a schema at the database level. While this is highly flexible for content management systems (CMS), it shifts the responsibility of maintaining data consistency and referential integrity entirely onto the application code.
-* **The PostgreSQL JSON Advantage:** Modern PostgreSQL natively supports the `JSONB` data type with full indexing and query capabilities. In 90% of production use cases, PostgreSQL can handle both structured relational schemas and dynamic NoSQL payloads, keeping the infrastructure stack simple.
+#### 🗃️ Relational vs. Non-Relational & Why Postgres?
+* **Relational (SQL):** Tables (Rows aur Columns) me structured data store karta hai. Strictly defined schema, constraints, and relational integrity mapping enforce karta hai (ideal for CRMs, financial ledgers, and transactions).
+* **Non-Relational (NoSQL):** JSON-like Documents, key-value, ya graphs me dynamic unstructured data store karta hai. High schema flexibility deta hai (ideal for dynamic blogging platforms/CMS) par data consistency aur relations maintain karne ka load application layer par chala jata hai.
+* **Why PostgreSQL is the #1 Choice:**
+  1. 100% Open-source, active community support, and highly SQL-standard compliant.
+  2. **Native JSON / JSONB Support:** Postgres natively `JSONB` data type (binary format) aur JSON queries support karta hai. Isme nested attributes par indexes (GIN indices) bhi lagaye ja sakte hain, jisse NoSQL database (jaise MongoDB) ko lagane ki zaroorat 90% use cases me khatam ho jati hai.
 
 #### 🔄 Migrations & Seeding
-* **Database Migrations:** Schema changes must be version-controlled just like source code. Migrations are sequential SQL files (often managed by tools like `dbmate`) that track schema evolution. They consist of:
-  * **Up Migration:** Scripts that apply changes (e.g., creating a table, adding a column).
-  * **Down Migration:** Scripts that roll back those exact changes if a deployment fails or must be reverted.
-* **Database Seeding:** Populating the database with mock "seed data" (e.g., default admin users, lookup tables, test projects) for local development, automated testing, or initial staging deployments.
+* **Database Migrations:** Schema changes ko version control karne ke liye sequential SQL scripts use kiye jaate hain:
+  * **Up Migration:** Apply changes (e.g., `CREATE TABLE`, adding columns/enums).
+  * **Down Migration:** Revert / Rollback changes safely in reverse dependency order if a deployment fails.
+  * Tools like `dbmate` maintain a `schema_migrations` table to track currently applied migration versions.
+* **Database Seeding:** Development, testing, aur staging environments me automatic test metadata ya default configuration data populate karne ko seeding kehte hain.
 
 #### 🛡️ Parameterized Queries (SQL Injection Prevention)
-* **SQL Injection (SQLi):** An attack where a user submits malicious SQL statements in an input field (e.g., inputting `' OR '1'='1` in a login password field) that the server naively concatenates into a raw SQL query string, executing the attacker's commands.
-* **Parameterized Queries (Prepared Statements):** The database pre-compiles the SQL query structure. User input is then passed separately into empty slots (`$1`, `$2` or `?`). The database engine treats these inputs strictly as strings or literal values, never executing them as SQL code, eliminating SQLi attacks at the database driver layer.
+* **SQL Injection (SQLi):** Attacker input field me malicious SQL code inject kar deta hai (e.g., `' OR '1'='1`). Agar application backend direct input strings concatenate (`"WHERE email = " + user_input`) karke query chalayega, to database use code command treat karke execute kar dega.
+* **Parameterized Queries (Prepared Statements):** Database driver placeholders (`$1`, `$2`, `?`) compile karta hai. Database execution query plan pehle tay hota hai aur user input ko strictly literal string values treat kiya jata hai, preventing injection.
 
 ---
 
@@ -2361,11 +2365,11 @@ If we were to store our data in raw text files (or browser local storage) on a s
 | **JSON** | `json` | Plain text JSON | Stores JSON as exact formatted text. Slow queries as it must parse the text on every read. |
 | | `jsonb` | Serialized binary JSON | **Recommended JSON default.** Parses input JSON into an optimized binary format. Supports indexing on JSON keys for fast queries. |
 | **Special** | `uuid` | 128-bit unique ID | **Recommended default for Primary Keys.** Prevents ID enumeration attacks (where attackers guess IDs sequentially like `/users/1`, `/users/2`) and hides DB volume. |
-| | `Custom Enums` | User-defined string list | Enforces a strict list of allowed values (e.g., `task_status`). Acts as self-documenting code at the database level. |
+| | `Custom Enums` | User-defined string list | Enforces a strict list of allowed values (e.g., `CREATE TYPE project_status AS ENUM ('active', 'completed')`). Acts as self-documenting code at the database level. |
 
 #### 🔑 Constraints: Database-Level Guardrails
 Constraints guarantee data integrity at the storage layer:
-* **PRIMARY KEY:** Enforces that a column (or group of columns) uniquely identifies each row and is `NOT NULL`.
+* **PRIMARY KEY:** Enforces that a column uniquely identifies each row and is `NOT NULL`.
 * **NOT NULL:** Enforces that a column must have a value. It is best practice to apply this to **over 70% of database fields** to prevent corrupt or unexpected null data states.
 * **UNIQUE:** Prevents duplicate values in a column (e.g., duplicate `email` addresses).
 * **CHECK:** Runs custom boolean validations on insert/update (e.g., `CHECK (priority >= 1 AND priority <= 5)`).
@@ -2374,15 +2378,21 @@ Constraints guarantee data integrity at the storage layer:
   * `RESTRICT`: Blocks the deletion of a parent row if dependent child rows exist, protecting data from accidental orphans.
   * `SET NULL`: Sets the foreign key column in child rows to NULL when the parent row is deleted.
 
-#### 🔄 Database JOINs
+#### 🔄 Database JOINs & nested JSON Serialization
 JOINs combine columns from multiple tables using relationships:
 * **INNER JOIN:** Returns rows only when there is a match in **both** tables.
-* **LEFT JOIN:** Returns all rows from the left table, and matched rows from the right table. If no match is found, NULL values are returned for the right table columns.
+* **LEFT JOIN:** Returns all rows from the left table, and matched rows from the right table. If no match is found, NULL values are returned for the right table columns. *Production Pro-tip:* API me user ke sath metadata/profile fetch karte waqt `LEFT JOIN` use karein taaki agar kisi user ki profile na bhi bani ho, toh bhi user model error filter na kare.
+* **`to_jsonb()` Nested Joining Trick:** Postgres queries me joined items ko directly Nested JSON representation me convert karne ke liye `to_jsonb()` wrap kiya ja sakta hai. Isse application layer parser (Pydantic/Zod) directly complex nested schema parse kar leta hai:
+  ```sql
+  SELECT u.id, u.email, to_jsonb(up) AS profile
+  FROM users u
+  LEFT JOIN user_profiles up ON u.user_id = up.user_id;
+  ```
 
 #### 📖 How Database Indexes Work
 An **Index** is a data structure (typically a B-Tree) that the database maintains to allow fast lookups, avoiding a slow **Sequential Scan** (scanning every row on disk).
-* *Analogy:* Scanning the entire book page-by-page to find a chapter is a Sequential Scan. Looking up the page number in the index at the back of the book is an Index Scan.
-* **The Index Write Overhead:** While indexes drastically speed up read queries ($O(\log N)$ instead of $O(N)$), they add write latency. Every time a row is `INSERT`ed, `UPDATE`ed, or `DELETE`ed, the database must write to the index tree. 
+* *Analogy:* Scanning the entire book page-by-page to find a chapter is a Sequential Scan ($O(N)$). Looking up the page number in the index at the back of the book is an Index Scan ($O(\log N)$).
+* **The Index Write Overhead:** While indexes drastically speed up read queries, they add write latency. Every time a row is `INSERT`ed, `UPDATE`ed, or `DELETE`ed, the database must write to the index tree.
 * **Custom Sort Indexes:** If an API frequently queries data sorted in a specific order (e.g., sorting news feed by `created_at DESC` so the newest items load first), creating a descending index (`CREATE INDEX ON table(column DESC)`) speeds up search performance significantly.
 
 ---
@@ -2390,8 +2400,21 @@ An **Index** is a data structure (typically a B-Tree) that the database maintain
 ### 📊 Production Trade-offs & "Why" Decisions
 
 #### String Storage: `varchar(255)` vs. `text`
-* **MySQL Heritage:** Many developers use `varchar(255)` because MySQL historically optimized storage based on it. 
-* **PostgreSQL reality:** In Postgres, `text` and `varchar` use the same underlying storage representation (TOAST). Using `varchar(255)` has no performance benefit. Furthermore, if your application requirements change (e.g., names exceed 255 chars), altering a `varchar` limit requires a risky database-level table lock migration. Using `text` with application-level validation avoids this operational hazard.
+* **MySQL Heritage:** Many developers use `varchar(255)` because MySQL historically optimized storage based on it.
+* **PostgreSQL reality:** In Postgres, `text` and `varchar` use the same underlying storage representation (TOAST). Using `varchar(255)` has no performance benefit. Furthermore, if your application requirements change (e.g., names exceed 255 chars), altering a `varchar` limit requires a risky database-level table lock migration. Using `text` with application-level validation (Zod/Pydantic schemas) avoids this operational hazard.
+
+#### 1:1 Schema Design Optimization: PK and FK Combination
+In a One-to-One relationship (like `users` and `user_profiles`), setting the profile table's `user_id` as **both the Primary Key and Foreign Key** is the optimal production pattern:
+```sql
+CREATE TABLE user_profiles (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    bio TEXT
+);
+```
+* **Pros:** 
+  1. Guarantees exactly one profile per user at the database level.
+  2. Eliminates the overhead of a separate auto-incrementing `id` column.
+  3. Keeps the main `users` table thin and fast by separating heavy, infrequently-accessed fields (like bio, avatar, settings) into a side-table.
 
 #### The Indexing Strategy: When to Index?
 To balance read performance and write overhead, only create indexes on columns that satisfy these three production criteria:
@@ -2426,9 +2449,10 @@ CREATE TABLE users (
 );
 
 -- 3. Create User Profiles Table (1-to-1 relationship with Users)
+-- We optimize this by using user_id as both the PRIMARY KEY and FOREIGN KEY.
+-- This enforces at most one profile per user at the database level and eliminates an extra ID column.
 CREATE TABLE user_profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     bio TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -2465,8 +2489,7 @@ CREATE TABLE tasks (
 );
 
 -- 7. Setup Indexes for Query Optimization
--- Rule 1: Index foreign keys involved in JOINs
-CREATE INDEX idx_user_profiles_user_id ON user_profiles(user_id);
+-- Rule 1: Index foreign keys involved in JOINs (Note: user_profiles(user_id) is already indexed as the PRIMARY KEY)
 CREATE INDEX idx_projects_owner_id ON projects(owner_id);
 CREATE INDEX idx_tasks_project_id ON tasks(project_id);
 

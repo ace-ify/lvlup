@@ -260,5 +260,5 @@ storage_state.json
 # Redis binaries
 redis/
 
-
+runSettings.json
 

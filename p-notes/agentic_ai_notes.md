@@ -4686,6 +4686,118 @@ Normal chunking ka sabse bada problem yeh hai ki chunks apna actual context lose
 
 ---
 
+#### ⏱️ 6:20:00 - Query Rewriting: HyDE, Multi-Query, and Decomposition
+
+Query rewriting is an advanced retrieval optimization phase that translates or expands raw user queries before they hit the vector database. In naive RAG systems, user queries are often short, conversational, or use different terminology than the indexing corpus (the "query-document vocabulary gap"). Query rewriting bridges this gap by transforming the query to match the semantic space of the target documents.
+
+### **First-Principles Concept**
+*   **The Query-Corpus Gap:** An embedding model maps similar semantic constructs closely. However, a question (e.g., *"How do I fix a network timeout?"*) and its answer (e.g., *"SocketTimeoutException is resolved by setting the retry interval to..."*) look very different in raw text. They can map to different vector regions.
+*   **Hypothetical Document Embeddings (HyDE):** Pioneered by Gao et al. in 2023 (*"Precise Zero-Shot Dense Retrieval without Relevance Labels"*). Instead of embedding the query, HyDE asks an LLM to generate a *fake/hypothetical answer* (even if factually incorrect) in the voice of the corpus. The fake answer is embedded and used to retrieve the real document. The fake answer sits in the correct region of the embedding space because it is formatted as an answer.
+*   **Multi-Query Expansion:** Generates $N$ paraphrases of the query, retrieves documents for all of them in parallel, and merges the results (using Reciprocal Rank Fusion) to handle phrasing variance.
+*   **Subquery Decomposition:** Splits a complex, multi-clause question (e.g., *"What is our policy on server crashes and where are the backup logs stored?"*) into independent atomic queries, runs them separately, and aggregates the context.
+
+### **Under the Hood**
+*   **HyDE Mechanics:** A prompt instructs the LLM: *"Write a short passage to answer the query: {query}"*. The output is passed directly to the embedding model. Even if the LLM hallucinates facts, the stylistic and semantic structure of the response aligns with the documents in the vector space, returning the correct document.
+*   **Latency Cost:** Running query rewriting adds an LLM call directly to the retrieval path (typically adding **500ms to 1.5s** of latency before database lookup).
+*   **Hallucination Risk (BM25 Failure):** If HyDE generates fake technical terms (e.g., a non-existent API name), a hybrid search pipeline using BM25 might fail because the fake word becomes a high-weight search token. To mitigate this, restrict BM25 weight or limit the hypothetical response to 2-3 sentences.
+
+### **Production Trade-offs / Practical Best Practices**
+*   **HyDE:** Best for phrasing mismatches, conceptual questions, and jargon-heavy databases. Avoid when queries require precise, exact-match numeric lookups (where hallucination ruins search).
+*   **Multi-Query:** Best for handling synonyms, different search tones, and general queries. Run retrievals in parallel to avoid linear latency scaling.
+*   **Decomposition:** Best for long, multi-topic, or comparative questions.
+*   **Hybrid Selection:** In production, do not run all three for every query. Implement a router/selector that checks query complexity (e.g., length, conjunctions like "and", "or") to assign the correct strategy.
+
+### **Code Blueprint / Architecture**
+
+Below is the query rewriting implementation code showcasing the rewriter classes:
+
+```python
+import os
+from dataclasses import dataclass, field
+from typing import List, Dict
+
+@dataclass
+class RewriteResult:
+    strategy: str
+    rewrites: List[str]
+    hypothetical: str = ""
+
+class Rewriter:
+    def rewrite(self, query: str) -> RewriteResult:
+        raise NotImplementedError
+
+@dataclass
+class HyDERewriter(Rewriter):
+    name: str = "hyde"
+    
+    def rewrite(self, query: str) -> RewriteResult:
+        # Prompt: "Write a short passage to answer the query: {query}"
+        # In production, call the LLM: llm.predict(prompt)
+        # Mocking the LLM hypothetical answer:
+        hypothetical_answer = (
+            f"To resolve the query '{query}', the system invokes the main handler, "
+            f"retries the connection, and logs the response to the central dashboard."
+        )
+        return RewriteResult(strategy=self.name, rewrites=[query], hypothetical=hypothetical_answer)
+
+@dataclass
+class MultiQueryRewriter(Rewriter):
+    name: str = "multiquery"
+    n: int = 3
+    
+    def rewrite(self, query: str) -> RewriteResult:
+        # Ask LLM to generate n paraphrases
+        rewrites = [
+            query,
+            f"Alternative phrasing 1 for: {query}",
+            f"Alternative phrasing 2 for: {query}",
+        ]
+        return RewriteResult(strategy=self.name, rewrites=rewrites)
+
+@dataclass
+class DecomposeRewriter(Rewriter):
+    name: str = "decompose"
+    
+    def rewrite(self, query: str) -> RewriteResult:
+        # Split query into sub-queries
+        sub_queries = [
+            f"Sub-query 1: First part of {query}",
+            f"Sub-query 2: Second part of {query}"
+        ]
+        return RewriteResult(strategy=self.name, rewrites=sub_queries)
+
+# Simulation
+if __name__ == "__main__":
+    query = "What happens if upload fails and retry budget is zero?"
+    
+    # 1. HyDE
+    hyde = HyDERewriter()
+    res_hyde = hyde.rewrite(query)
+    print(f"Strategy: {res_hyde.strategy.upper()}")
+    print(f"Generated Hypothetical Answer:\n{res_hyde.hypothetical}\n")
+
+    # 2. Multi-Query
+    mq = MultiQueryRewriter()
+    res_mq = mq.rewrite(query)
+    print(f"Strategy: {res_mq.strategy.upper()}")
+    print(f"Rewrites: {res_mq.rewrites}\n")
+```
+
+### **Code Walkthrough / Gothrough**
+*   **The Rewriters (`HyDERewriter`, `MultiQueryRewriter`, `DecomposeRewriter`):** Subclasses of the base `Rewriter` class. They return a structured `RewriteResult` containing the rewrite strings or the hypothetical document.
+*   **HyDE Execution Flow:** Instead of executing similarity search on the user's raw query, the system embeds `res_hyde.hypothetical` and uses it as the query vector. 
+*   **RRF Fusion:** For `MultiQuery` and `Decompose`, the retriever runs searches for each item in the `rewrites` list in parallel, fusions their rankings via Reciprocal Rank Fusion (RRF), and deduplicates before LLM generation.
+
+### **Hinglish Summary**
+RAG me hum direct user ki query embed karke document search karte hain, par problem yeh hai ki questions aur answers ka pattern vector space me alag hota hai (Query-Corpus Vocabulary Gap) [1]. Isko solve karne ke liye 3 query rewriting techniques use hoti hain:
+1. **HyDE (Hypothetical Document Embeddings):** LLM se ek fake answer likhwaya jata hai. Chunki fake answer ki style document jaisi hoti hai, isliye iska embedding real document ke vector region se jaldi match ho jata hai [1].
+2. **Multi-Query:** Query ko 3-4 tarike se paraphrase karke parallel search kiya jata hai aur rankings merge ki jati hain.
+3. **Decomposition:** Ek lambe complex question ko small sub-questions me break kiya jata hai.
+
+*Production Tip:* Har query par teeno mat chalao (latency add hogi **500ms se 1s** ki). Query parser lagao jo dynamically select kare ki kis query par HyDE chahiye aur kispar Multi-Query ya Decomposition.
+
+---
+
 #### ⏱️ 6:24:26 - Late Chunking vs Early Chunking
 
 Here are the detailed technical notes for the "Late Chunking vs Early Chunking" chapter, engineered for your production RAG architecture blueprint.

@@ -1,7 +1,7 @@
 # 📘 FastAPI Complete Notes — Modules 1 to 8
 
 > Covers: API Basics, FastAPI Intro, Building APIs, Database Integration, ML Integration, Advanced Concepts, Testing, and Performance Tuning.
-> These notes are written for deep understanding — not for cramming.
+> These notes are written for deep understanding — not for cramming..
 
 ---
 

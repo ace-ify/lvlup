@@ -245,7 +245,7 @@ misc/*.pdf
 *.zip
 
 # --- Obsidian Vault Directories & System Files ---
-dsatfuk.md
+dsalog.md
 ai_gaps.md
 
 # Agent State, Run Logs, and NotebookLM Credentials

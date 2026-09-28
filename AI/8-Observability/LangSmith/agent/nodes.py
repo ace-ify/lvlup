@@ -6,6 +6,9 @@ No explicit tracing code needed in these nodes.
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
+
+from langchain_anthropic import ChatAnthropic
+
 from langchain_community.utilities import GoogleSerperAPIWrapper
 import os
 
@@ -13,16 +16,23 @@ from .state import AgentState
 from .tools import search_document
 
 # ── LLM clients ──────────────────────────────────────────────────────────
-_groq = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.3,
-    api_key=os.getenv("GROQ_API_KEY"),
-)
+# _groq = ChatGroq(
+#     model="llama-3.3-70b-versatile",
+#     temperature=0.3,
+#     api_key=os.getenv("GROQ_API_KEY"),
+# )
 
-_gemini = ChatOpenAI(
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    api_key=os.getenv("GEMINI_API_KEY"),
-    model="gemini-2.5-flash-lite",
+# _gemini = ChatOpenAI(
+#     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+#     api_key=os.getenv("GEMINI_API_KEY"),
+#     model="gemini-2.5-flash-lite",
+#     temperature=0.3,
+# )
+
+_claude = ChatAnthropic(
+    model="claude-opus-4-8",
+    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    base_url=os.getenv("ANTHROPIC_BASE_URL"),  
     temperature=0.3,
 )
 
@@ -32,7 +42,7 @@ _serper = GoogleSerperAPIWrapper()
 
 def planner(state: AgentState) -> dict:
     """Rewrites the user question for clarity and precision."""
-    response = _groq.invoke([
+    response = _claude.invoke([
         SystemMessage(content=(
             "You are a research question refiner. "
             "Rewrite the user question to be more specific and searchable. "
@@ -70,7 +80,7 @@ def web_enricher(state: AgentState) -> dict:
 def synthesizer(state: AgentState) -> dict:
     """Combines document knowledge and web results into a coherent analysis."""
     doc_context = "\n\n---\n\n".join(state["doc_sections"])
-    synthesis = _groq.invoke([
+    synthesis = _claude.invoke([
         SystemMessage(content=(
             "You are a research synthesizer. Given knowledge from a document and "
             "from the web, combine both into a clear, structured analysis. "
@@ -91,7 +101,7 @@ def synthesizer(state: AgentState) -> dict:
 def report_writer(state: AgentState) -> dict:
     """Formats the synthesis into a polished final report using Gemini."""
     try:
-        report = _gemini.invoke([
+        report = _claude.invoke([
             SystemMessage(content=(
                 "You are a technical report writer. Format the given analysis into "
                 "a clean, well-structured report with: a one-sentence TL;DR at the top, "

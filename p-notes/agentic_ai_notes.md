@@ -6401,5 +6401,181 @@ builder.add_conditional_edges("agent", tools_condition)
 | **Tool Execution** | Custom dispatcher function | `ToolNode` / `tools_condition` | Use prebuilt `tools_condition` to reduce routing boilerplate. |
 
 ---
+
+## Section 13: LLM Observability & Production Deployment (LangSmith & LangGraph Studio)
+
+In production AI engineering, building an agent is only 20% of the job; 80% is **observability, tracing, and evaluation**. LLMs are non-deterministic, multi-step chains can fail unpredictably, and token costs can explode without real-time tracking.
+
+---
+
+### 1. The Core Problem: Why Observability? (The "Black Box")
+
+In traditional web development, a bug comes with an exact HTTP status code and stack trace. In multi-step LLM agents (e.g. `Planner -> Retriever -> Search -> Synthesizer -> Writer`):
+- If the final output is completely wrong, **which node hallucinated?**
+- Did the web search fail, or did the synthesizer misinterpret valid docs?
+- How much did this single user turn cost in API tokens?
+- What was the exact prompt and temperature sent to Anthropic or OpenAI?
+
+**LangSmith** acts as **Datadog / OpenTelemetry for LLM Systems**. It provides:
+1. **Trace Trees & Spans**: Visual hierarchical breakdown of every node, LLM call, prompt, output latency, and token cost.
+2. **Datasets & Evaluations**: Save failing production runs into test datasets to benchmark prompt updates or new model versions.
+3. **Feedback Loops**: Connect user ratings (thumbs-up / thumbs-down) directly to trace IDs.
+
+---
+
+### 2. Zero-Code Instrumentation: How LangSmith Tracing Works
+
+LangChain and LangGraph have built-in tracing listeners. When enabled via environment variables, background worker threads capture events without blocking your main application:
+
+```env
+# Mandatory Tracing Flags
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=lsv2_pt_your_key_here
+LANGSMITH_PROJECT=my-agent-production    # Dashboard bucket name
+```
+
+> ⚠️ **Critical AI Engineer Pitfall (Import Order Trap)**:
+> Always execute `load_dotenv()` **before** importing any LangChain or LangGraph modules. If modules are imported first, background clients initialize without API keys and all traces will silently drop!
+
+#### Tracing Custom Python Functions (`@traceable`)
+If a step in your pipeline uses raw Python (e.g. regex, external REST API, custom DB query) instead of LangChain runnables, LangSmith won't see it by default. Use the `@traceable` decorator:
+
+```python
+from langsmith import traceable
+
+@traceable(name="keyword_document_search", run_type="retriever")
+def search_local_files(query: str, top_k: int = 3):
+    # This entire execution, inputs, and outputs will appear as a span in the LangSmith trace tree!
+    return ["section 1", "section 2"]
+```
+
+---
+
+### 3. Production Architecture Blueprint: The 3-File Pattern
+
+When structuring production LangGraph projects, decouple your concerns into three separate layers:
+
+```text
+MyAgentProject/
+├── .env                  # API keys and LANGSMITH_TRACING=true
+├── langgraph.json        # Deployment manifest for LangGraph Studio/Cloud
+├── graph_entry.py        # Root entrypoint bridge (resolves module paths)
+├── app.py                # User interface (Streamlit, FastAPI, etc.)
+└── agent/
+    ├── state.py          # TypedDict state schema (Data Contract)
+    ├── nodes.py          # Pure business logic functions
+    └── graph.py          # StateGraph builder and compiler
+```
+
+#### Layer 1: Core Graph Factory ([`agent/graph.py`](file:///c:/ace/lvlup/AI/8-Observability/LangSmith/agent/graph.py))
+Defines the state machine, nodes, and transitions:
+```python
+from langgraph.graph import StateGraph, START, END
+from .state import AgentState
+from .nodes import planner, researcher, writer
+
+def build_graph():
+    g = StateGraph(AgentState)
+    g.add_node("planner", planner)
+    g.add_node("researcher", researcher)
+    g.add_node("writer", writer)
+
+    g.add_edge(START, "planner")
+    g.add_edge("planner", "researcher")
+    g.add_edge("researcher", "writer")
+    g.add_edge("writer", END)
+    return g.compile()
+```
+
+#### Layer 2: UI Runtime Caching ([`app.py`](file:///c:/ace/lvlup/AI/8-Observability/LangSmith/app.py))
+Streamlit re-runs the entire Python file on every user interaction. Never recompile your graph on each turn:
+```python
+import streamlit as st
+
+@st.cache_resource
+def init():
+    from agent.graph import build_graph
+    return build_graph()  # Singleton instance cached in memory
+
+graph = init()
+
+# Invocation passes runtime metadata for LangSmith filtering
+result = graph.invoke(
+    {"question": user_input},
+    config={"metadata": {"session_id": st.session_state.session_id, "user_tier": "pro"}}
+)
+```
+
+#### Layer 3: Studio & Cloud Bridge ([`graph_entry.py`](file:///c:/ace/lvlup/AI/8-Observability/LangSmith/graph_entry.py))
+When running external development CLI tools, Python's import system often fails to recognize subdirectories as root packages:
+```python
+import sys, os
+
+# Resolves relative imports without requiring 'pip install -e .'
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from agent.graph import build_graph
+graph = build_graph()
+```
+
+---
+
+### 4. Manifest Deep Dive: What is `langgraph.json`?
+
+Just like `Dockerfile` defines container builds, [`langgraph.json`](file:///c:/ace/lvlup/AI/8-Observability/LangSmith/langgraph.json) is the standard configuration manifest for **LangGraph Studio** and **LangGraph Cloud**:
+
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "document_intelligence_agent": "./graph_entry.py:graph"
+  },
+  "env": ".env"
+}
+```
+
+*   **`dependencies`**: Specifies local directories or packages required to run the agent. `["."]` treats the root folder as the primary package.
+*   **`graphs`**: Mapping of `{ "<graph_id>": "<file_path>:<compiled_graph_variable>" }`. You can host multiple agents side-by-side in one repo.
+*   **`env`**: Path to the environment variable file loaded by the runtime container.
+
+#### What happens when you run `langgraph dev`?
+1. Reads `langgraph.json` and spins up an internal background **FastAPI server** with standardized endpoints (`/runs`, `/threads`).
+2. Launches **LangGraph Studio** in your browser:
+   - Visual interactive diagram of your nodes and edges.
+   - **Time-Travel Debugging**: Pause execution at any node, inspect the state, edit the dictionary values in real-time, and resume execution.
+   - Stepping through runs node-by-node.
+
+---
+
+### 5. AI Engineer Edge Cases & Production Checklist
+
+| Scenario | What Goes Wrong? | Production Solution |
+| :--- | :--- | :--- |
+| **API Failure in Multi-Step Chain** | External web search or LLM throws rate limit; entire graph crashes. | Wrap individual node bodies in `try...except`, write fallback strings to state, and continue pipeline. |
+| **Silent Trace Loss** | `LANGSMITH_TRACING=true` set, but no traces appear on dashboard. | Verify API key format (`lsv2_pt_...`), confirm `load_dotenv()` runs before imports, check firewall blocking `api.smith.langchain.com`. |
+| **Sensitive Data / PII Leaks** | Traces log real user credit card numbers, passwords, or emails. | Implement an input scrubber / anonymizer middleware or set `hide_inputs=True` on traceable spans. |
+| **High Latency Overhead** | Tracing slows down user responses. | LangSmith runs asynchronous background batching by default; never use synchronous blocking loggers in hot request paths. |
+| **State Bloat** | Passing large raw file contents through every node exhausts context windows. | Store heavy payloads (PDFs, raw web dumps) in object storage (S3) or temporary storage and pass only pointers/IDs in state. |
+
+---
+
+### 🔲 Whiteboard & Practical Mastery (Section 23)
+
+#### Whiteboard Questions
+1. Why does `langgraph dev` require a file like `graph_entry.py` instead of importing directly from a package?
+2. What is the difference between LangSmith and LangGraph Studio?
+3. How can you trace a native Python sorting function in LangSmith that does not use LangChain?
+
+<details>
+<summary>💡 Reveal Answers</summary>
+
+- **`graph_entry.py` Entrypoint**: CLI tools run outside the package context. Setting `sys.path.insert(0, ...)` ensures relative package imports inside subfolders resolve smoothly without requiring an editable pip install.
+- **LangSmith vs Studio**: LangSmith is the cloud SaaS platform for logging traces, metrics, evaluations, and datasets. LangGraph Studio is a local or cloud visual IDE for inspecting, running, and time-travel debugging LangGraph state machines.
+- **Tracing Native Python**: Decorate the function with `@traceable(name="custom_sort", run_type="parser")` from the `langsmith` library.
+</details>
+
+---
 *🌌 [[Home MOC]] · [[Career MOC]]*
+
 
